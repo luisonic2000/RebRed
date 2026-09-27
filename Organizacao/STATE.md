@@ -6,6 +6,8 @@ Current source version: `1.0-beta`
 
 Latest Windows delivery: `Finais/RebRed-1.0-beta/RebRed-1.0-beta.exe`
 
+Public source repository: `https://github.com/luisonic2000/RebRed`
+
 Verified locally:
 
 - `python -m py_compile app.py`
