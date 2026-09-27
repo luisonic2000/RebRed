@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+commission_planner_data.json
+rebred_data.json
+work/
+build/
+dist/

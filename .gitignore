@@ -1,0 +1,9 @@
+# Local preferences and generated build artifacts
+Finais/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/*.log
+**/*.tmp
+Projeto/rebred_data.json
+Projeto/commission_planner_data.json
