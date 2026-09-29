@@ -1,23 +1,24 @@
 # Current state
 
-Last verified: 2026-09-27
+Last verified: 2026-09-28
 
-Current source version: `1.0-beta`
+Current source version: `1.1-beta`
 
-Latest Windows delivery: `Finais/RebRed-1.0-beta/RebRed-1.0-beta.exe`
+Latest Windows delivery: `Projeto/outputs/RebRed-1.1-beta.exe`
 
 Public source repository: `https://github.com/luisonic2000/RebRed`
 
 Verified locally:
 
 - `python -m py_compile app.py`
-- Headless posting-protection test harness
-- Windows executable generated with PyInstaller in the previous delivery wave
+- Headless tests for posting protection, community search, and title length
+- Tk window smoke check at compact Windows window sizes
 
-Known limitation:
+Known limitations:
 
-- The Tk graphical interface has not been exercised automatically. Manual user testing is still required for interaction and visual layout.
+- Manual user testing is still recommended for image selection, clipboard file paste, dialogs, and browser opening.
+- Reddit community rules can change; built-in checks remain guidance only.
 
 Next step:
 
-- Run the headless suite from `Projeto/tests` before any functional change, then use a focused manual check for affected UI controls.
+- Run the headless suite from `Projeto/tests` and rebuild the portable EXE when releasing source changes.

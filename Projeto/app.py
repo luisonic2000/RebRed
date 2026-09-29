@@ -15,7 +15,8 @@ import sys
 import ctypes
 import webbrowser
 import subprocess
-from datetime import datetime, timedelta
+import unicodedata
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +28,29 @@ from PIL import Image, ImageOps, ImageTk
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.0-beta"
+APP_VERSION = "1.1-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
+TITLE_CHARACTER_LIMIT = 300
+
+
+def _search_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(character for character in normalized if not unicodedata.combining(character))
+
+
+def filter_profile_indices(profiles: list[dict[str, Any]], query: str) -> list[int]:
+    """Return profile indexes matching a case- and accent-insensitive query."""
+    search = _search_key(query.strip())
+    return [
+        index for index, profile in enumerate(profiles)
+        if search in _search_key(str(profile.get("name", "")))
+    ]
+
+
+def title_character_count(title: str) -> tuple[int, int]:
+    """Return title length and remaining characters under Reddit's title limit."""
+    length = len(title)
+    return length, TITLE_CHARACTER_LIMIT - length
 
 SOCIAL_FIELDS = [
     ("vgen", "VGen"), ("artstation", "ArtStation"), ("behance", "Behance"),
@@ -198,6 +220,8 @@ DEFAULT_LOCAL_POST_LOCK_HOURS = 24
 # Post drafts remain in English. This map changes only the local app interface.
 UI_PT = {
     "Communities": "Comunidades", "Each community has its own folder, drafts and rule checks.": "Cada comunidade tem sua própria pasta, rascunhos e verificações de regras.",
+    "Search communities": "Buscar comunidades", "Clear": "Limpar",
+    "Ready": "Agora", "Soon": "Em breve", "Outside": "Fora da janela", "Locked": "Bloqueada",
     "Add": "Adicionar", "Edit": "Editar", "Remove": "Remover", "Export community template": "Exportar modelo da comunidade",
     "Import community template": "Importar modelo da comunidade", "Copy settings to…": "Copiar configurações para…",
     "Creator profile": "Perfil do artista", "Export": "Exportar", "Import creator template": "Importar modelo de perfil",
@@ -950,6 +974,10 @@ class PlannerApp(tk.Tk):
         self.title_tag_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Choose a community to prepare a manual draft.")
         self.repost_notice_var = tk.StringVar(value="")
+        self.community_search_var = tk.StringVar(value="")
+        self.community_count_var = tk.StringVar(value="")
+        self.title_count_var = tk.StringVar(value=f"0 / {TITLE_CHARACTER_LIMIT}")
+        self.body_count_var = tk.StringVar(value="0 characters")
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.build_interface()
         self.capture_ui_texts()
@@ -988,9 +1016,28 @@ class PlannerApp(tk.Tk):
         left = ttk.Frame(outer, padding=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
         ttk.Label(left, text="Communities", font=("Segoe UI", 13, "bold")).pack(anchor="w")
-        ttk.Label(left, text="Each community has its own folder, drafts and rule checks.", wraplength=225).pack(anchor="w", pady=(2, 10))
-        self.profile_list = tk.Listbox(left, exportselection=False, height=20)
-        self.profile_list.pack(fill="both", expand=True)
+        ttk.Label(left, text="Each community has its own folder, drafts and rule checks.", wraplength=245).pack(anchor="w", pady=(2, 10))
+        search_row = ttk.Frame(left)
+        search_row.pack(fill="x", pady=(0, 4))
+        ttk.Label(search_row, text="Search communities").pack(side="left")
+        ttk.Button(search_row, text="Clear", command=lambda: self.community_search_var.set("")).pack(side="right")
+        search_entry = ttk.Entry(left, textvariable=self.community_search_var)
+        search_entry.pack(fill="x", pady=(0, 4))
+        self.community_search_var.trace_add("write", lambda *_args: self.refresh_profiles())
+        ttk.Label(left, textvariable=self.community_count_var).pack(anchor="w", pady=(0, 5))
+
+        legend = ttk.Frame(left)
+        legend.pack(fill="x", pady=(0, 6))
+        for rank, label in enumerate(("Ready", "Soon", "Outside", "Locked")):
+            ttk.Label(legend, text=f"● {label}", style=f"Availability{rank}.TLabel").pack(side="left", padx=(0, 6))
+
+        list_frame = ttk.Frame(left)
+        list_frame.pack(fill="both", expand=True)
+        self.profile_list = tk.Listbox(list_frame, exportselection=False, height=20, activestyle="none")
+        profile_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.profile_list.yview)
+        self.profile_list.configure(yscrollcommand=profile_scrollbar.set)
+        self.profile_list.pack(side="left", fill="both", expand=True)
+        profile_scrollbar.pack(side="right", fill="y")
         self.profile_list.bind("<<ListboxSelect>>", self.on_profile_select)
         profile_buttons = ttk.Frame(left)
         profile_buttons.pack(fill="x", pady=(8, 0))
@@ -1019,7 +1066,6 @@ class PlannerApp(tk.Tk):
         header.pack(fill="x")
         self.community_heading = ttk.Label(header, text="", font=("Segoe UI", 18, "bold"))
         self.community_heading.pack(side="left")
-        ttk.Label(header, textvariable=self.status_var).pack(side="left", padx=(20, 0))
         self.language_button = ttk.Button(header, command=self.toggle_ui_language)
         self.language_button.pack(side="right")
         self.theme_button = ttk.Button(header, command=self.toggle_ui_theme)
@@ -1029,29 +1075,34 @@ class PlannerApp(tk.Tk):
         metadata = ttk.Frame(right)
         metadata.pack(fill="x", pady=(4, 10))
         self.folder_label = ttk.Label(metadata, text="")
-        self.folder_label.pack(side="left")
+        self.folder_label.pack(side="left", fill="x", expand=True)
+        ttk.Label(metadata, textvariable=self.status_var, style="Status.TLabel", anchor="e", justify="right", wraplength=520).pack(side="right")
 
         category_bar = ttk.LabelFrame(right, text="Draft options", padding=8)
         category_bar.pack(fill="x", pady=(0, 6))
-        ttk.Label(category_bar, text="Content type").pack(side="left")
-        category_picker = ttk.Combobox(category_bar, textvariable=self.category_var, values=CATEGORY_LABELS, state="readonly", width=16)
+        options_row = ttk.Frame(category_bar)
+        options_row.pack(fill="x")
+        actions_row = ttk.Frame(category_bar)
+        actions_row.pack(fill="x", pady=(7, 0))
+        ttk.Label(options_row, text="Content type").pack(side="left")
+        category_picker = ttk.Combobox(options_row, textvariable=self.category_var, values=CATEGORY_LABELS, state="readonly", width=16)
         category_picker.pack(side="left", padx=(8, 16))
         category_picker.bind("<<ComboboxSelected>>", lambda _event: self.validate())
-        ttk.Label(category_bar, text="Link style").pack(side="left")
-        links = ttk.Combobox(category_bar, textvariable=self.link_style_var, values=["Markdown", "Rich text"], state="readonly", width=12)
+        ttk.Label(options_row, text="Link style").pack(side="left")
+        links = ttk.Combobox(options_row, textvariable=self.link_style_var, values=["Markdown", "Rich text"], state="readonly", width=12)
         links.pack(side="left", padx=8)
         links.bind("<<ComboboxSelected>>", lambda _event: self.validate())
-        self.include_price_check = ttk.Checkbutton(category_bar, text="Include starting price", variable=self.include_price_var, command=self.validate)
+        self.include_price_check = ttk.Checkbutton(options_row, text="Include starting price", variable=self.include_price_var, command=self.validate)
         self.include_price_check.pack(side="left", padx=(8, 0))
-        ttk.Label(category_bar, text="Images to select (1–9)").pack(side="left", padx=(12, 0))
-        image_count = ttk.Combobox(category_bar, textvariable=self.image_count_var, values=list(range(1, 10)), state="readonly", width=3)
+        ttk.Label(actions_row, text="Images to select (1–9)").pack(side="left")
+        image_count = ttk.Combobox(actions_row, textvariable=self.image_count_var, values=list(range(1, 10)), state="readonly", width=3)
         image_count.pack(side="left", padx=(6, 0))
         image_count.bind("<<ComboboxSelected>>", self.on_image_count_changed)
-        self.title_tag_check = ttk.Checkbutton(category_bar, variable=self.title_tag_var, command=self.on_title_tag_toggle)
+        self.title_tag_check = ttk.Checkbutton(actions_row, variable=self.title_tag_var, command=self.on_title_tag_toggle)
         self.title_tag_check.pack(side="left", padx=(12, 0))
-        self.prepare_button = ttk.Button(category_bar, text="Prepare a draft", command=self.prepare_draft, width=18)
+        self.prepare_button = ttk.Button(actions_row, text="Prepare a draft", command=self.prepare_draft, width=18, style="Accent.TButton")
         self.prepare_button.pack(side="right")
-        self.open_community_button = ttk.Button(category_bar, text="Open community", command=self.open_community)
+        self.open_community_button = ttk.Button(actions_row, text="Open community", command=self.open_community)
         self.open_community_button.pack(side="right", padx=(0, 8))
 
         # The two splitters keep the workspace compact while allowing the
@@ -1063,7 +1114,11 @@ class PlannerApp(tk.Tk):
 
         draft_column = ttk.Frame(editor)
         editor.add(draft_column, weight=3)
-        ttk.Label(draft_column, text="Title").pack(anchor="w")
+        title_heading = ttk.Frame(draft_column)
+        title_heading.pack(fill="x")
+        ttk.Label(title_heading, text="Title").pack(side="left")
+        self.title_count_label = ttk.Label(title_heading, textvariable=self.title_count_var, style="Counter.TLabel")
+        self.title_count_label.pack(side="right")
         title_frame = ttk.LabelFrame(draft_column, text="Draft controls", padding=8)
         title_frame.pack(fill="x", pady=(2, 8))
         title_frame.columnconfigure(0, weight=1)
@@ -1081,9 +1136,12 @@ class PlannerApp(tk.Tk):
         body_frame = ttk.LabelFrame(draft_column, text="Draft body", padding=8)
         body_frame.pack(fill="both", expand=True)
         body_frame.columnconfigure(0, weight=1)
-        body_frame.rowconfigure(0, weight=1)
+        body_frame.rowconfigure(0, weight=0)
         self.body_text = tk.Text(body_frame, height=13, wrap="word", font=("Segoe UI", 10))
-        self.body_text.grid(row=0, column=0, sticky="nsew")
+        self.body_count_label = ttk.Label(body_frame, textvariable=self.body_count_var, style="Counter.TLabel")
+        self.body_count_label.grid(row=0, column=0, sticky="e", pady=(0, 4))
+        self.body_text.grid(row=1, column=0, sticky="nsew")
+        body_frame.rowconfigure(1, weight=1)
         self.body_text.bind("<KeyRelease>", lambda _event: self.validate())
         ttk.Button(body_frame, text="Copy body", command=lambda: self.copy_text(self.body_text.get("1.0", "end").strip(), "Body copied.")).grid(row=0, column=1, sticky="n", padx=(7, 0))
 
@@ -1188,7 +1246,10 @@ class PlannerApp(tk.Tk):
             if isinstance(widget, (tk.Text, tk.Listbox)):
                 try:
                     widget.configure(background=field, foreground=foreground, insertbackground=insert,
-                                     selectbackground="#536d8b" if dark else "#c9def5")
+                                     selectbackground="#526c86" if dark else "#bfd8f2",
+                                     selectforeground="#ffffff" if dark else "#17212b",
+                                     highlightthickness=1, highlightbackground="#3c444e" if dark else "#d5dce5",
+                                     highlightcolor="#83a9d4" if dark else "#648bb8")
                 except tk.TclError:
                     pass
             for child in widget.winfo_children():
@@ -1204,20 +1265,48 @@ class PlannerApp(tk.Tk):
         active = "#506b87" if dark else "#d4e2f1"
         style = ttk.Style(self)
         style.theme_use("clam")
+        muted = "#aeb8c4" if dark else "#687586"
+        accent = "#527ca3" if dark else "#3978b8"
+        accent_active = "#648fb6" if dark else "#2f699f"
+        border = "#3a434e" if dark else "#d9e0e8"
+        danger = "#ff9189" if dark else "#b42318"
         style.configure(".", background=background, foreground=foreground)
         style.configure("TFrame", background=background)
         style.configure("TLabel", background=background, foreground=foreground)
-        style.configure("TLabelframe", background=background, foreground=foreground)
+        style.configure("TLabelframe", background=background, foreground=foreground,
+                        bordercolor=border, relief="solid")
         style.configure("TLabelframe.Label", background=background, foreground=foreground)
-        style.configure("TButton", background=button, foreground=foreground, padding=6)
+        style.configure("TButton", background=button, foreground=foreground, padding=(9, 6), borderwidth=0)
         style.map("TButton", background=[("active", active)])
-        style.configure("TEntry", fieldbackground=field, foreground=foreground)
+        style.configure("Accent.TButton", background=accent, foreground="#ffffff", padding=(14, 7),
+                        borderwidth=0, font=("Segoe UI", 10, "bold"))
+        style.map("Accent.TButton", background=[("active", accent_active), ("disabled", button)],
+                  foreground=[("disabled", muted)])
+        style.configure("TEntry", fieldbackground=field, foreground=foreground,
+                        bordercolor=border, lightcolor=border, darkcolor=border)
         style.configure("TCombobox", fieldbackground=field, background=button, foreground=foreground)
         style.map("TCombobox", fieldbackground=[("readonly", field)], foreground=[("readonly", foreground)])
         style.configure("TCheckbutton", background=background, foreground=foreground)
         style.configure("TPanedwindow", background=background)
+        style.configure("Status.TLabel", background=background, foreground=muted, font=("Segoe UI", 9))
+        style.configure("Counter.TLabel", background=background, foreground=muted, font=("Segoe UI", 9))
+        style.configure("Counter.OverLimit.TLabel", background=background, foreground=danger,
+                        font=("Segoe UI", 9, "bold"))
+        legend_colors = (
+            ("#94d2a7", "#24723e") if dark else ("#216b3a", "#216b3a"),
+            ("#e4c66d", "#80651f") if dark else ("#82600a", "#82600a"),
+            ("#e29a96", "#9f4541") if dark else ("#a33832", "#a33832"),
+            ("#c6a27e", "#806346") if dark else ("#805c3d", "#805c3d"),
+        )
+        for rank, (dark_color, light_color) in enumerate(legend_colors):
+            style.configure(f"Availability{rank}.TLabel",
+                            foreground=dark_color if dark else light_color,
+                            background=background, font=("Segoe UI", 8, "bold"))
         self.configure(background=background)
         self.apply_widget_theme(self)
+        if hasattr(self, "profile_list"):
+            self.refresh_profiles()
+        self.update_draft_counters()
         self.refresh_toggle_labels()
 
     def toggle_ui_theme(self) -> None:
@@ -1231,6 +1320,7 @@ class PlannerApp(tk.Tk):
         self.data["ui_language"] = self.ui_language
         self.apply_ui_language()
         self.load_profile(self.current_index)
+        self.refresh_profiles()
         self.save_data()
 
     def save_data(self) -> None:
@@ -1245,18 +1335,40 @@ class PlannerApp(tk.Tk):
 
     def refresh_profiles(self) -> None:
         current_name = self.data["profiles"][self.current_index]["name"] if self.data["profiles"] else ""
-        self.profile_order = sorted(range(len(self.data["profiles"])), key=lambda index: (self.availability_rank(self.data["profiles"][index]), self.data["profiles"][index]["name"].lower()))
+        ordered_indices = sorted(
+            range(len(self.data["profiles"])),
+            key=lambda index: (
+                self.availability_rank(self.data["profiles"][index]),
+                self.data["profiles"][index]["name"].lower(),
+            ),
+        )
+        ordered_profiles = [self.data["profiles"][index] for index in ordered_indices]
+        visible_indexes = filter_profile_indices(ordered_profiles, self.community_search_var.get())
+        self.profile_order = [ordered_indices[index] for index in visible_indexes]
         self.profile_list.delete(0, "end")
-        selected_list_index = 0
-        colors = {0: "#dcefdc", 1: "#fff1c9", 2: "#f7dddd", 3: "#e8d4bd"}
+        selected_list_index: int | None = None
+        dark = self.ui_theme == "dark"
+        colors = (
+            ("#284637", "#345743", "#4d3031", "#493c30")
+            if dark else ("#e0f1e4", "#fff2cf", "#fae4e3", "#eee1d3")
+        )
+        foregrounds = ("#e5f3e9", "#fff2cf", "#fae4e3", "#f1e5d9") if dark else ("#214a2d", "#654d12", "#752d29", "#5e4934")
         for list_index, source_index in enumerate(self.profile_order):
             profile = self.data["profiles"][source_index]
             self.profile_list.insert("end", profile["name"])
-            self.profile_list.itemconfig(list_index, background=colors[self.availability_rank(profile)])
+            rank = self.availability_rank(profile)
+            self.profile_list.itemconfig(list_index, background=colors[rank], foreground=foregrounds[rank])
             if profile["name"] == current_name:
                 selected_list_index = list_index
-        if self.data["profiles"]:
+        if selected_list_index is not None:
             self.profile_list.selection_set(selected_list_index)
+            self.profile_list.see(selected_list_index)
+        total_count = len(self.data["profiles"])
+        visible_count = len(self.profile_order)
+        if self.ui_language == "pt":
+            self.community_count_var.set(f"{visible_count} de {total_count} comunidades")
+        else:
+            self.community_count_var.set(f"{visible_count} of {total_count} communities")
         self.update_repost_controls()
 
     def refresh_clock(self) -> None:
@@ -1480,7 +1592,7 @@ class PlannerApp(tk.Tk):
         # Keep the portable build dependency-free. Brasília currently uses UTC-3.
         # Other values deliberately use the local computer clock.
         if profile.get("timezone", "America/Sao_Paulo") == "America/Sao_Paulo":
-            return datetime.utcnow() - timedelta(hours=3)
+            return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=3)
         return datetime.now()
 
     def allowed_days(self, profile: dict[str, Any] | None = None) -> set[str]:
@@ -1757,17 +1869,32 @@ class PlannerApp(tk.Tk):
         image_text = f"{len(self.selected_images)} image(s) selected" if self.selected_images else "no image selected"
         self.status_var.set(f"{self.availability_text()}  |  Next allowed: {time_text}  |  {image_text}")
 
+    def update_draft_counters(self) -> None:
+        if not hasattr(self, "title_entry"):
+            return
+        title_length, remaining = title_character_count(self.title_entry.get().strip())
+        self.title_count_var.set(f"{title_length} / {TITLE_CHARACTER_LIMIT}")
+        self.title_count_label.configure(
+            style="Counter.OverLimit.TLabel" if remaining < 0 else "Counter.TLabel"
+        )
+        body_length = len(self.body_text.get("1.0", "end").strip())
+        unit = "caracteres" if self.ui_language == "pt" else "characters"
+        self.body_count_var.set(f"{body_length} {unit}")
+
     def validate(self) -> None:
         profile = self.profile
         rules = profile["rules"]
         title = self.title_entry.get().strip()
         body = self.body_text.get("1.0", "end").strip()
+        self.update_draft_counters()
         lowered_title = title.lower()
         lowered_body = body.lower()
         checks: list[tuple[str, str]] = []
 
         if not title:
             checks.append(("error", "Add a title."))
+        elif len(title) > TITLE_CHARACTER_LIMIT:
+            checks.append(("error", f"Title exceeds Reddit's {TITLE_CHARACTER_LIMIT}-character limit."))
         elif rules.get("require_handle") and "@" not in title:
             checks.append(("error", "Title needs an @handle for this community."))
         else:

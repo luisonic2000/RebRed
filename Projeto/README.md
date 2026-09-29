@@ -1,4 +1,4 @@
-# RebRed 1.0-beta
+# RebRed 1.1-beta
 
 Local Windows planner for preparing commission posts manually. It does not sign in to Reddit, publish posts, create image copies, or automate browser actions. This clean beta has no creator information, links, or prices embedded in its post defaults. It starts with one blank artist profile. The Credits button is kept as a project credit.
 
@@ -22,6 +22,8 @@ RebRed is released under the [MIT License](LICENSE). The application source, dep
 - Communities that do not accept commission ads use an `Artwork / OC` route. Their prepared drafts remove the commission pitch, price, portfolio links, and contact call-to-action instead of producing a misleading `For Hire` post.
 - Live checks for title terms, @handle, price minimums, portfolio/social links, forbidden links, selected image reuse, and the local posting interval.
 - A 1–9 image selector for each prepared draft. It controls both the random selection and the maximum manual selection in the image list.
+- A searchable community list with an availability legend, plus a live Reddit title-length counter that warns when a title exceeds 300 characters.
+- A less crowded draft toolbar that separates content settings from the primary prepare/open actions.
 - A `Choose image folder` action on the main screen. It lets you choose the exact folder for that community, shows a thumbnail of the selected image, and can open that selected folder in Explorer. Select one or more images and use `Copy selected images` (or Ctrl+C while the list has focus) to place the existing files on the Windows clipboard for a manual Ctrl+V into a compatible browser upload field. It never creates, copies, or uploads image files.
 - Three editable suggested Brasília-time windows are stored for every allowed weekday. Live availability colors are pastel green for a configured window, yellow for a suitable day outside that window, and red for other days. The community list refreshes once per minute and places green communities first.
 - The main work area has two drag dividers: one adjusts the draft versus image workspace, and another adjusts that workspace versus the rule checks and community notes.
@@ -44,7 +46,15 @@ The app creates `rebred_data.json` beside `app.py` to remember its settings and 
 
 ## Portable EXE
 
-The portable EXE is in `outputs`. Keep `rebred_data.json` beside it if you move the program to another computer. RebRed includes its starter communities and rules internally; no spreadsheet needs to travel with it.
+The Windows portable build is [`outputs/RebRed-1.1-beta.exe`](outputs/RebRed-1.1-beta.exe). Keep your own `rebred_data.json` beside the executable if you move it to another computer. The executable does not include personal profiles, history, or artwork. RebRed includes its starter communities and rules internally; no spreadsheet needs to travel with it.
+
+To rebuild the one-file Windows executable from this folder:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install pyinstaller
+python -m PyInstaller --noconfirm --clean --distpath outputs --workpath build RebRed-1.1-beta.spec
+```
 
 ## Important limits
 
