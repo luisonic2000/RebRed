@@ -111,7 +111,7 @@ jobs:
         run: |
           set +e
           APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run --auto-servernum \
-            timeout --signal=TERM 20s ./outputs-RebRed-1.1-beta-x86_64.AppImage
+            timeout --signal=TERM 20s ./outputs/RebRed-1.1-beta-x86_64.AppImage
           result=$?
           set -e
           if [ "$result" -ne 124 ]; then
@@ -123,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rebred-linux-x86_64
-          path: App/outputs-RebRed-1.1-beta-x86_64.AppImage
+          path: App/outputs/RebRed-1.1-beta-x86_64.AppImage
           if-no-files-found: error
 
   release:
