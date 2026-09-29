@@ -7,11 +7,11 @@ Thank you for helping review RebRed while it is in beta.
 - Whether a draft remains local and requires a manual Reddit submission.
 - Rule-check accuracy and clear warnings when a community rule is uncertain.
 - Link rendering, creator-profile privacy, and the Windows image clipboard.
-- Interface clarity, accessibility, and reliability on common Windows setups.
+- Interface clarity, accessibility, and reliability on supported Windows and Linux setups.
 
 ## Local setup
 
-1. Install Python 3.13 or newer.
+1. Install Python 3.10 or newer. On Debian/Ubuntu Linux, install `python3-tk` using the system package manager.
 2. Run `python -m pip install -r requirements.txt`.
 3. Run `python app.py`.
 

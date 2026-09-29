@@ -1,6 +1,6 @@
 # RebRed 1.1-beta
 
-Local Windows planner for preparing commission posts manually. It does not sign in to Reddit, publish posts, create image copies, or automate browser actions. This clean beta has no creator information, links, or prices embedded in its post defaults. It starts with one blank artist profile. The Credits button is kept as a project credit.
+Local desktop planner for preparing commission posts manually on Windows and Linux. It does not sign in to Reddit, publish posts, create image copies, or automate browser actions. This clean beta has no creator information, links, or prices embedded in its post defaults. It starts with one blank artist profile. The Credits button is kept as a project credit.
 
 ## Open source and beta review
 
@@ -36,17 +36,33 @@ RebRed is released under the [MIT License](LICENSE). The application source, dep
 
 ## Run locally
 
-Windows already includes the Tk interface used by this app. From this folder, run:
+Install Python 3.10 or newer and the dependencies. Windows includes Tkinter with standard Python distributions. On Debian/Ubuntu Linux, install `python3-tk` before the Python packages. From this folder, run:
 
 ```powershell
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-The app creates `rebred_data.json` beside `app.py` to remember its settings and history. It never duplicates your image files. This configuration file is created automatically and is not a spreadsheet dependency. It is intentionally separate from the data file used by earlier personalized builds.
+On Debian/Ubuntu, if Tkinter is not installed yet, run `sudo apt install python3-tk` first. The app creates its settings and history automatically: beside `app.py` on Windows, or in `$XDG_STATE_HOME/rebred` (default `~/.local/state/rebred`) on Linux. It never duplicates your image files and does not need a spreadsheet. Its data file is intentionally separate from files used by earlier personalized builds.
 
-## Portable EXE
+## Downloads
 
-The Windows portable build is [`outputs/RebRed-1.1-beta.exe`](outputs/RebRed-1.1-beta.exe). Keep your own `rebred_data.json` beside the executable if you move it to another computer. The executable does not include personal profiles, history, or artwork. RebRed includes its starter communities and rules internally; no spreadsheet needs to travel with it.
+Download the latest release assets from [GitHub Releases](https://github.com/luisonic2000/RebRed/releases/latest):
+
+- `RebRed-1.1-beta.exe` is the portable Windows x86-64 application.
+- `RebRed-1.1-beta-x86_64.AppImage` is the Linux x86-64 application.
+- `SHA256SUMS.txt` contains checksums for both downloads.
+
+The Windows executable and Linux AppImage do not include personal profiles, posting history, or artwork. Windows stores `rebred_data.json` beside the executable; Linux stores it in `$XDG_STATE_HOME/rebred` or `~/.local/state/rebred`. Back up that file/folder separately when moving to another computer.
+
+On Linux, make the AppImage executable if needed and launch it:
+
+```bash
+chmod +x RebRed-1.1-beta-x86_64.AppImage
+./RebRed-1.1-beta-x86_64.AppImage
+```
+
+The AppImage targets x86-64 Linux and requires a graphical X11-compatible desktop (Wayland sessions can use XWayland). If the AppImage runtime cannot mount because FUSE is unavailable, install the distribution's FUSE 2 compatibility package or run it with `--appimage-extract-and-run`. Linux does not support copying image files to the clipboard from this app; open the image folder and drag files into the browser upload field.
 
 To rebuild the one-file Windows executable from this folder:
 
@@ -55,6 +71,8 @@ python -m pip install -r requirements.txt
 python -m pip install pyinstaller
 python -m PyInstaller --noconfirm --clean --distpath outputs --workpath build RebRed-1.1-beta.spec
 ```
+
+Both release assets are built and attached automatically when a `v*` version tag is pushed. The Windows executable uses `RebRed-1.1-beta.spec`; the AppImage is built on Ubuntu 22.04 with PyInstaller and linuxdeploy.
 
 ## Important limits
 

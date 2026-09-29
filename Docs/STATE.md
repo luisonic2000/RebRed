@@ -6,6 +6,8 @@ Current source version: `1.1-beta`
 
 Latest Windows delivery: `App/outputs/RebRed-1.1-beta.exe`
 
+Linux AppImages and Windows release executables are built and attached to GitHub Releases by `.github/workflows/release.yml` when a `v*` tag is pushed.
+
 Public source repository: `https://github.com/luisonic2000/RebRed`
 
 Verified locally:
