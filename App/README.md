@@ -1,4 +1,4 @@
-# RebRed 1.1-beta
+# RebRed 1.2-beta
 
 Local desktop planner for preparing commission posts manually on Windows and Linux. It does not sign in to Reddit, publish posts, create image copies, or automate browser actions. This clean beta has no creator information, links, or prices embedded in its post defaults. It starts with one blank artist profile. The Credits button is kept as a project credit.
 
@@ -24,6 +24,7 @@ RebRed is released under the [MIT License](LICENSE). The application source, dep
 - A 1–9 image selector for each prepared draft. It controls both the random selection and the maximum manual selection in the image list.
 - A searchable community list with an availability legend, plus a live Reddit title-length counter that warns when a title exceeds 300 characters.
 - A less crowded draft toolbar that separates content settings from the primary prepare/open actions.
+- Four dark appearance presets (Adwaita Dark, Catppuccin Mocha, Nord, and Dracula), an optional light palette, a custom accent color, text scaling, compact/comfortable density, and a reduced-motion preference. These preferences persist locally and recolor the whole interface using opaque semantic palettes.
 - A `Choose image folder` action on the main screen. It lets you choose the exact folder for that community, shows a thumbnail of the selected image, and can open that selected folder in Explorer. Select one or more images and use `Copy selected images` (or Ctrl+C while the list has focus) to place the existing files on the Windows clipboard for a manual Ctrl+V into a compatible browser upload field. It never creates, copies, or uploads image files.
 - Three editable suggested Brasília-time windows are stored for every allowed weekday. Live availability colors are pastel green for a configured window, yellow for a suitable day outside that window, and red for other days. The community list refreshes once per minute and places green communities first.
 - The main work area has two drag dividers: one adjusts the draft versus image workspace, and another adjusts that workspace versus the rule checks and community notes.
@@ -49,8 +50,8 @@ On Debian/Ubuntu, if Tkinter is not installed yet, run `sudo apt install python3
 
 Download the latest release assets from [GitHub Releases](https://github.com/luisonic2000/RebRed/releases/latest):
 
-- `RebRed-1.1-beta.exe` is the portable Windows x86-64 application.
-- `RebRed-1.1-beta-x86_64.AppImage` is the Linux x86-64 application.
+- `RebRed-1.2-beta.exe` is the portable Windows x86-64 application.
+- `RebRed-1.2-beta-x86_64.AppImage` is the Linux x86-64 application.
 - `SHA256SUMS.txt` contains checksums for both downloads.
 
 The Windows executable and Linux AppImage do not include personal profiles, posting history, or artwork. Windows stores `rebred_data.json` beside the executable; Linux stores it in `$XDG_STATE_HOME/rebred` or `~/.local/state/rebred`. Back up that file/folder separately when moving to another computer.
@@ -58,8 +59,8 @@ The Windows executable and Linux AppImage do not include personal profiles, post
 On Linux, make the AppImage executable if needed and launch it:
 
 ```bash
-chmod +x RebRed-1.1-beta-x86_64.AppImage
-./RebRed-1.1-beta-x86_64.AppImage
+chmod +x RebRed-1.2-beta-x86_64.AppImage
+./RebRed-1.2-beta-x86_64.AppImage
 ```
 
 The AppImage targets x86-64 Linux and requires a graphical X11-compatible desktop (Wayland sessions can use XWayland). If the AppImage runtime cannot mount because FUSE is unavailable, install the distribution's FUSE 2 compatibility package or run it with `--appimage-extract-and-run`. Linux does not support copying image files to the clipboard from this app; open the image folder and drag files into the browser upload field.
@@ -69,10 +70,12 @@ To rebuild the one-file Windows executable from this folder:
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --clean --distpath outputs --workpath build RebRed-1.1-beta.spec
+python -m PyInstaller --noconfirm --clean --distpath outputs --workpath build RebRed-1.2-beta.spec
 ```
 
-Both release assets are built and attached automatically when a `v*` version tag is pushed. The Windows executable uses `RebRed-1.1-beta.spec`; the AppImage is built on Ubuntu 22.04 with PyInstaller and linuxdeploy.
+Both release assets are built and attached automatically when a `v*` version tag is pushed. The Windows executable uses `RebRed-1.2-beta.spec`; the AppImage is built on Ubuntu 22.04 with PyInstaller and linuxdeploy.
+
+The Tk interface uses opaque native widgets. Rounded custom widget corners and CSS-based styling are not available without replacing the interface toolkit, so RebRed keeps its existing lightweight Tk architecture instead.
 
 ## Important limits
 

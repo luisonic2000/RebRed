@@ -21,16 +21,126 @@ from pathlib import Path
 from typing import Any
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+import tkinter.font as tkfont
+from tkinter import colorchooser, filedialog, messagebox, ttk
 from PIL import Image, ImageOps, ImageTk
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.1-beta"
+APP_VERSION = "1.2-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
 TITLE_CHARACTER_LIMIT = 300
+FONT_SCALE_OPTIONS = (0.85, 0.95, 1.0, 1.1, 1.2, 1.3)
+
+THEME_ACCENTS = {
+    "adwaita-dark": "#62a0ea",
+    "catppuccin-mocha": "#cba6f7",
+    "nord": "#88c0d0",
+    "dracula": "#bd93f9",
+    "light": "#3978b8",
+}
+
+THEME_PALETTES: dict[str, dict[str, str]] = {
+    "adwaita-dark": {
+        "background": "#1e1e20", "surface": "#252528", "surface_raised": "#303034",
+        "border": "#414146", "text_primary": "#f4f4f5", "text_secondary": "#b7b7bf",
+        "success": "#8ff0a4", "warning": "#f8e45c", "danger": "#ff938c",
+        "success_surface": "#263a2c", "warning_surface": "#403a23",
+        "danger_surface": "#432a2b", "locked_surface": "#44382d",
+    },
+    "catppuccin-mocha": {
+        "background": "#1e1e2e", "surface": "#242438", "surface_raised": "#313149",
+        "border": "#45455f", "text_primary": "#cdd6f4", "text_secondary": "#a6adc8",
+        "success": "#a6e3a1", "warning": "#f9e2af", "danger": "#f38ba8",
+        "success_surface": "#263b36", "warning_surface": "#40392f",
+        "danger_surface": "#412e41", "locked_surface": "#44362e",
+    },
+    "nord": {
+        "background": "#242933", "surface": "#2e3440", "surface_raised": "#3b4252",
+        "border": "#4c566a", "text_primary": "#eceff4", "text_secondary": "#c4cbd6",
+        "success": "#a3be8c", "warning": "#ebcb8b", "danger": "#bf616a",
+        "success_surface": "#35413f", "warning_surface": "#49453c",
+        "danger_surface": "#47383f", "locked_surface": "#49413a",
+    },
+    "dracula": {
+        "background": "#21222c", "surface": "#282a36", "surface_raised": "#343746",
+        "border": "#45475a", "text_primary": "#f8f8f2", "text_secondary": "#c5c6d0",
+        "success": "#50fa7b", "warning": "#f1fa8c", "danger": "#ff5555",
+        "success_surface": "#263e39", "warning_surface": "#41402f",
+        "danger_surface": "#462d3b", "locked_surface": "#443834",
+    },
+    "light": {
+        "background": "#f5f6f8", "surface": "#ffffff", "surface_raised": "#eef1f5",
+        "border": "#d9e0e8", "text_primary": "#20242a", "text_secondary": "#687586",
+        "success": "#216b3a", "warning": "#82600a", "danger": "#a33832",
+        "success_surface": "#e0f1e4", "warning_surface": "#fff2cf",
+        "danger_surface": "#fae4e3", "locked_surface": "#eee1d3",
+    },
+}
+
+
+def normalize_appearance_preferences(preferences: dict[str, Any]) -> dict[str, Any]:
+    """Migrate and validate appearance preferences without changing other data."""
+    theme = str(preferences.get("ui_theme", "adwaita-dark")).strip().lower()
+    theme = {"dark": "adwaita-dark"}.get(theme, theme)
+    if theme not in THEME_PALETTES:
+        theme = "adwaita-dark"
+
+    accent = str(preferences.get("ui_accent_color", THEME_ACCENTS[theme])).strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+        accent = THEME_ACCENTS[theme]
+
+    try:
+        font_scale = float(preferences.get("ui_font_scale", 1.0))
+    except (TypeError, ValueError):
+        font_scale = 1.0
+    if font_scale not in FONT_SCALE_OPTIONS:
+        font_scale = 1.0
+
+    density = str(preferences.get("ui_density", "comfortable")).strip().lower()
+    if density not in {"compact", "comfortable"}:
+        density = "comfortable"
+
+    reduce_motion = preferences.get("ui_reduce_motion", True)
+    if not isinstance(reduce_motion, bool):
+        reduce_motion = True
+
+    return {
+        "ui_theme": theme,
+        "ui_accent_color": accent.lower(),
+        "ui_font_scale": font_scale,
+        "ui_density": density,
+        "ui_reduce_motion": reduce_motion,
+    }
+
+
+def _contrast_foreground(background: str) -> str:
+    channels = [int(background[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    luminance = sum(
+        channel * weight
+        for channel, weight in zip(channels, (0.2126, 0.7152, 0.0722))
+    )
+    return "#111318" if luminance > 0.58 else "#ffffff"
+
+
+def _hover_color(color: str) -> str:
+    channels = [int(color[index:index + 2], 16) for index in (1, 3, 5)]
+    return "#" + "".join(f"{round(channel * 0.86):02x}" for channel in channels)
+
+
+def theme_palette(theme: str, accent: str | None = None) -> dict[str, str]:
+    """Return semantic, opaque colors for a supported theme and chosen accent."""
+    selected = theme if theme in THEME_PALETTES else "adwaita-dark"
+    palette = dict(THEME_PALETTES[selected])
+    selected_accent = accent or THEME_ACCENTS[selected]
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", selected_accent):
+        selected_accent = THEME_ACCENTS[selected]
+    palette["accent"] = selected_accent.lower()
+    palette["accent_hover"] = _hover_color(palette["accent"])
+    palette["accent_foreground"] = _contrast_foreground(palette["accent"])
+    return palette
 
 
 def _search_key(value: str) -> str:
@@ -222,6 +332,12 @@ UI_PT = {
     "Communities": "Comunidades", "Each community has its own folder, drafts and rule checks.": "Cada comunidade tem sua própria pasta, rascunhos e verificações de regras.",
     "Search communities": "Buscar comunidades", "Clear": "Limpar",
     "Ready": "Agora", "Soon": "Em breve", "Outside": "Fora da janela", "Locked": "Bloqueada",
+    "Appearance": "Aparência", "Appearance settings": "Configurações de aparência",
+    "Theme": "Tema", "Accent color": "Cor de destaque", "Choose color": "Escolher cor",
+    "Text size": "Tamanho do texto", "Interface density": "Densidade da interface",
+    "Comfortable": "Confortável", "Compact": "Compacta", "Reduce motion": "Reduzir movimento",
+    "This interface has no continuous animations.": "Esta interface não tem animações contínuas.",
+    "Cancel": "Cancelar", "Apply": "Aplicar",
     "Add": "Adicionar", "Edit": "Editar", "Remove": "Remover", "Export community template": "Exportar modelo da comunidade",
     "Import community template": "Importar modelo da comunidade", "Copy settings to…": "Copiar configurações para…",
     "Creator profile": "Perfil do artista", "Export": "Exportar", "Import creator template": "Importar modelo de perfil",
@@ -554,7 +670,13 @@ def default_data() -> dict[str, Any]:
                 "Este é o único perfil que prepara o resultado em português."
             )
     blank_creator = {"name": "My artist profile", "artist_name": "", "handle": "", "personal_price": 0, "commercial_price": 0, "use_emojis": False, "payment_note": "", "payment_note_pt": "", "contact_note": "", "contact_note_pt": "", "reviews_note": "", "reviews_link": "", "links": {}, "platform_handles": {}, "link_display": {}}
-    return {"profiles": [anime, *communities], "creator_profiles": [blank_creator], "history": [], "image_count": 6}
+    return {
+        "profiles": [anime, *communities],
+        "creator_profiles": [blank_creator],
+        "history": [],
+        "image_count": 6,
+        **normalize_appearance_preferences({}),
+    }
 
 
 def load_data() -> dict[str, Any]:
@@ -568,8 +690,8 @@ def load_data() -> dict[str, Any]:
         defaults = default_data()
         loaded.setdefault("creator_profiles", defaults["creator_profiles"])
         loaded.setdefault("ui_language", "en")
-        loaded.setdefault("ui_theme", "light")
         loaded.setdefault("image_count", 6)
+        loaded.update(normalize_appearance_preferences(loaded))
         default_creators = {creator["name"]: creator for creator in defaults["creator_profiles"]}
         for creator in loaded["creator_profiles"]:
             starter_creator = default_creators.get(creator.get("name"), {})
@@ -944,6 +1066,149 @@ class CreatorDialog(tk.Toplevel):
         self.destroy()
 
 
+class AppearanceDialog(tk.Toplevel):
+    """Edit lightweight, persisted visual preferences for the planner."""
+
+    THEME_LABELS = {
+        "Adwaita Dark": "adwaita-dark",
+        "Catppuccin Mocha": "catppuccin-mocha",
+        "Nord": "nord",
+        "Dracula": "dracula",
+        "Light": "light",
+    }
+    SCALE_LABELS = {
+        "85%": 0.85,
+        "95%": 0.95,
+        "100%": 1.0,
+        "110%": 1.1,
+        "120%": 1.2,
+        "130%": 1.3,
+    }
+
+    def __init__(self, app: "PlannerApp"):
+        super().__init__(app)
+        self.app = app
+        self.result: dict[str, Any] | None = None
+        self.title(
+            "Configurações de aparência"
+            if app.ui_language == "pt" else "Appearance settings"
+        )
+        self.geometry("470x370")
+        self.resizable(False, False)
+        self.transient(app)
+        self.grab_set()
+
+        root = ttk.Frame(self, padding=18)
+        root.pack(fill="both", expand=True)
+        root.columnconfigure(1, weight=1)
+
+        theme_label = next(
+            label for label, value in self.THEME_LABELS.items()
+            if value == app.ui_theme
+        )
+        scale_label = next(
+            label for label, value in self.SCALE_LABELS.items()
+            if value == app.ui_font_scale
+        )
+        self.theme_var = tk.StringVar(value=theme_label)
+        self.scale_var = tk.StringVar(value=scale_label)
+        self.density_values = {
+            ("Compacta" if app.ui_language == "pt" else "Compact"): "compact",
+            ("Confortável" if app.ui_language == "pt" else "Comfortable"): "comfortable",
+        }
+        density_label = next(
+            label for label, value in self.density_values.items()
+            if value == app.ui_density
+        )
+        self.density_var = tk.StringVar(value=density_label)
+        self.motion_var = tk.BooleanVar(value=app.ui_reduce_motion)
+        self.accent_color = app.ui_accent_color
+        accent_controls = ttk.Frame(root)
+        self.swatch = tk.Label(
+            accent_controls,
+            text="   ",
+            background=self.accent_color,
+            relief="solid",
+            borderwidth=1,
+        )
+
+        self._add_row(root, "Theme", ttk.Combobox(
+            root,
+            textvariable=self.theme_var,
+            values=list(self.THEME_LABELS),
+            state="readonly",
+        ), 0)
+        accent_controls = ttk.Frame(root)
+        ttk.Button(
+            accent_controls, text="Choose color", command=self.choose_color
+        ).pack(side="left")
+        self.swatch.pack(side="left", padx=(10, 0))
+        self._add_row(root, "Accent color", accent_controls, 1)
+        self._add_row(root, "Text size", ttk.Combobox(
+            root,
+            textvariable=self.scale_var,
+            values=list(self.SCALE_LABELS),
+            state="readonly",
+        ), 2)
+        self._add_row(root, "Interface density", ttk.Combobox(
+            root,
+            textvariable=self.density_var,
+            values=list(self.density_values),
+            state="readonly",
+        ), 3)
+        ttk.Checkbutton(root, text="Reduce motion", variable=self.motion_var).grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        )
+        ttk.Label(
+            root,
+            text="This interface has no continuous animations.",
+            wraplength=400,
+            justify="left",
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 10))
+
+        actions = ttk.Frame(root)
+        actions.grid(row=6, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(actions, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(actions, text="Apply", command=self.save).pack(
+            side="right", padx=(0, 8)
+        )
+
+        app.localize_window(self)
+        app.apply_widget_theme(self)
+
+    @staticmethod
+    def _add_row(root: ttk.Frame, label: str, widget: tk.Widget, row: int) -> None:
+        ttk.Label(root, text=label).grid(
+            row=row, column=0, sticky="w", padx=(0, 14), pady=7
+        )
+        widget.grid(row=row, column=1, sticky="ew", pady=7)
+
+    def choose_color(self) -> None:
+        _rgb, color = colorchooser.askcolor(
+            color=self.accent_color,
+            parent=self,
+            title="Cor de destaque"
+            if self.app.ui_language == "pt" else "Accent color",
+        )
+        if color:
+            self.accent_color = color
+            self.swatch.configure(background=color)
+
+    def save(self) -> None:
+        self.result = normalize_appearance_preferences({
+            "ui_theme": self.THEME_LABELS.get(
+                self.theme_var.get(), "adwaita-dark"
+            ),
+            "ui_accent_color": self.accent_color,
+            "ui_font_scale": self.SCALE_LABELS.get(self.scale_var.get(), 1.0),
+            "ui_density": self.density_values.get(
+                self.density_var.get(), "comfortable"
+            ),
+            "ui_reduce_motion": self.motion_var.get(),
+        })
+        self.destroy()
+
+
 class PlannerApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -958,7 +1223,13 @@ class PlannerApp(tk.Tk):
             self.after_idle(self.maximize_window)
         self.data = load_data()
         self.ui_language = self.data.get("ui_language", "en")
-        self.ui_theme = self.data.get("ui_theme", "light")
+        self.data.update(normalize_appearance_preferences(self.data))
+        self.ui_theme = self.data["ui_theme"]
+        self.ui_accent_color = self.data["ui_accent_color"]
+        self.ui_font_scale = self.data["ui_font_scale"]
+        self.ui_density = self.data["ui_density"]
+        self.ui_reduce_motion = self.data["ui_reduce_motion"]
+        self._widget_base_fonts: dict[str, tuple[str, int, str]] = {}
         self._source_widget_text: dict[str, str] = {}
         self.current_index = 0
         self.creator_index = 0
@@ -1003,19 +1274,23 @@ class PlannerApp(tk.Tk):
         except tk.TclError:
             pass
 
+    def ui_font(self, size: int, weight: str = "normal") -> tuple[str, int, str]:
+        """Scale explicit interface fonts along with Tk's themed defaults."""
+        return ("Segoe UI", max(8, round(size * self.ui_font_scale)), weight)
+
     def build_interface(self) -> None:
         style = ttk.Style(self)
         if "vista" in style.theme_names():
             style.theme_use("vista")
-        outer = ttk.Frame(self, padding=14)
-        outer.pack(fill="both", expand=True)
-        outer.columnconfigure(0, minsize=285)
-        outer.columnconfigure(1, weight=1)
-        outer.rowconfigure(0, weight=1)
+        self.outer_frame = ttk.Frame(self, padding=14)
+        self.outer_frame.pack(fill="both", expand=True)
+        self.outer_frame.columnconfigure(0, minsize=285)
+        self.outer_frame.columnconfigure(1, weight=1)
+        self.outer_frame.rowconfigure(0, weight=1)
 
-        left = ttk.Frame(outer, padding=8)
+        left = ttk.Frame(self.outer_frame, padding=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        ttk.Label(left, text="Communities", font=("Segoe UI", 13, "bold")).pack(anchor="w")
+        ttk.Label(left, text="Communities", font=self.ui_font(13, "bold")).pack(anchor="w")
         ttk.Label(left, text="Each community has its own folder, drafts and rule checks.", wraplength=245).pack(anchor="w", pady=(2, 10))
         search_row = ttk.Frame(left)
         search_row.pack(fill="x", pady=(0, 4))
@@ -1048,7 +1323,7 @@ class PlannerApp(tk.Tk):
         ttk.Button(left, text="Import community template", command=self.import_profile).pack(fill="x")
         ttk.Button(left, text="Copy settings to…", command=self.copy_community_settings).pack(fill="x", pady=(4, 0))
         ttk.Separator(left).pack(fill="x", pady=14)
-        ttk.Label(left, text="Creator profile", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        ttk.Label(left, text="Creator profile", font=self.ui_font(11, "bold")).pack(anchor="w")
         self.creator_combo = ttk.Combobox(left, state="readonly")
         self.creator_combo.pack(fill="x", pady=(4, 5))
         self.creator_combo.bind("<<ComboboxSelected>>", self.on_creator_select)
@@ -1060,16 +1335,16 @@ class PlannerApp(tk.Tk):
         ttk.Button(creator_buttons, text="Export", command=self.export_creator).pack(side="left")
         ttk.Button(left, text="Import creator template", command=self.import_creator).pack(fill="x", pady=(5, 0))
 
-        right = ttk.Frame(outer, padding=8)
+        right = ttk.Frame(self.outer_frame, padding=8)
         right.grid(row=0, column=1, sticky="nsew")
         header = ttk.Frame(right)
         header.pack(fill="x")
-        self.community_heading = ttk.Label(header, text="", font=("Segoe UI", 18, "bold"))
+        self.community_heading = ttk.Label(header, text="", font=self.ui_font(18, "bold"))
         self.community_heading.pack(side="left")
         self.language_button = ttk.Button(header, command=self.toggle_ui_language)
         self.language_button.pack(side="right")
-        self.theme_button = ttk.Button(header, command=self.toggle_ui_theme)
-        self.theme_button.pack(side="right", padx=(0, 7))
+        self.appearance_button = ttk.Button(header, command=self.open_appearance)
+        self.appearance_button.pack(side="right", padx=(0, 7))
         ttk.Button(header, text="Credits", command=self.open_credits).pack(side="right", padx=(0, 7))
 
         metadata = ttk.Frame(right)
@@ -1122,7 +1397,7 @@ class PlannerApp(tk.Tk):
         title_frame = ttk.LabelFrame(draft_column, text="Draft controls", padding=8)
         title_frame.pack(fill="x", pady=(2, 8))
         title_frame.columnconfigure(0, weight=1)
-        self.title_entry = ttk.Entry(title_frame, font=("Segoe UI", 11))
+        self.title_entry = ttk.Entry(title_frame, font=self.ui_font(11))
         self.title_entry.grid(row=0, column=0, sticky="ew")
         self.title_entry.bind("<KeyRelease>", lambda _event: self.validate())
         self.title_entry.bind("<FocusOut>", lambda _event: self.validate())
@@ -1137,7 +1412,7 @@ class PlannerApp(tk.Tk):
         body_frame.pack(fill="both", expand=True)
         body_frame.columnconfigure(0, weight=1)
         body_frame.rowconfigure(0, weight=0)
-        self.body_text = tk.Text(body_frame, height=13, wrap="word", font=("Segoe UI", 10))
+        self.body_text = tk.Text(body_frame, height=13, wrap="word", font=self.ui_font(10))
         self.body_count_label = ttk.Label(body_frame, textvariable=self.body_count_var, style="Counter.TLabel")
         self.body_count_label.grid(row=0, column=0, sticky="e", pady=(0, 4))
         self.body_text.grid(row=1, column=0, sticky="nsew")
@@ -1175,7 +1450,7 @@ class PlannerApp(tk.Tk):
         content_stack.add(bottom, weight=2)
         validation_box = ttk.LabelFrame(bottom, text="Live rule check", padding=8)
         bottom.add(validation_box, weight=3)
-        self.validation_text = tk.Text(validation_box, height=8, wrap="word", state="disabled", font=("Segoe UI", 9))
+        self.validation_text = tk.Text(validation_box, height=8, wrap="word", state="disabled", font=self.ui_font(9))
         self.validation_text.pack(fill="both", expand=True)
         notes_box = ttk.LabelFrame(bottom, text="Community notes", padding=8)
         bottom.add(notes_box, weight=2)
@@ -1215,10 +1490,9 @@ class PlannerApp(tk.Tk):
 
     def refresh_toggle_labels(self) -> None:
         self.language_button.configure(text="English" if self.ui_language == "pt" else "Português")
-        if self.ui_language == "pt":
-            self.theme_button.configure(text="Modo claro" if self.ui_theme == "dark" else "Modo escuro")
-        else:
-            self.theme_button.configure(text="Light mode" if self.ui_theme == "dark" else "Dark mode")
+        self.appearance_button.configure(
+            text="Aparência" if self.ui_language == "pt" else "Appearance"
+        )
 
     def localize_window(self, root: tk.Misc) -> None:
         """Translate a newly opened settings window without touching post drafts."""
@@ -1237,72 +1511,105 @@ class PlannerApp(tk.Tk):
 
     def apply_widget_theme(self, root: tk.Misc) -> None:
         """Apply the selected colour palette to Tk widgets without styling drafts."""
-        dark = self.ui_theme == "dark"
-        background = "#20252b" if dark else "#f5f6f8"
-        foreground = "#edf1f5" if dark else "#20242a"
-        field = "#2b3138" if dark else "#ffffff"
-        insert = "#edf1f5" if dark else "#20242a"
+        palette = theme_palette(self.ui_theme, self.ui_accent_color)
+
         def visit(widget: tk.Misc) -> None:
+            try:
+                font_spec = widget.cget("font")
+            except tk.TclError:
+                font_spec = ""
+            if font_spec:
+                try:
+                    path = str(widget)
+                    if path not in self._widget_base_fonts:
+                        original = tkfont.Font(root=self, font=font_spec)
+                        self._widget_base_fonts[path] = (
+                            str(original.cget("family")),
+                            int(original.cget("size")),
+                            str(original.cget("weight")),
+                        )
+                    family, original_size, weight = self._widget_base_fonts[path]
+                    scaled_size = max(8, round(abs(original_size) * self.ui_font_scale))
+                    widget.configure(font=(family, scaled_size, weight))
+                except tk.TclError:
+                    pass
             if isinstance(widget, (tk.Text, tk.Listbox)):
                 try:
-                    widget.configure(background=field, foreground=foreground, insertbackground=insert,
-                                     selectbackground="#526c86" if dark else "#bfd8f2",
-                                     selectforeground="#ffffff" if dark else "#17212b",
-                                     highlightthickness=1, highlightbackground="#3c444e" if dark else "#d5dce5",
-                                     highlightcolor="#83a9d4" if dark else "#648bb8")
+                    background = (
+                        palette["surface_raised"]
+                        if isinstance(widget, tk.Listbox)
+                        else palette["surface"]
+                    )
+                    widget.configure(
+                        background=background,
+                        foreground=palette["text_primary"],
+                        insertbackground=palette["text_primary"],
+                        selectbackground=palette["accent"],
+                        selectforeground=palette["accent_foreground"],
+                        highlightthickness=1,
+                        highlightbackground=palette["border"],
+                        highlightcolor=palette["accent"],
+                    )
                 except tk.TclError:
                     pass
             for child in widget.winfo_children():
                 visit(child)
+
         visit(root)
 
     def apply_ui_theme(self) -> None:
-        dark = self.ui_theme == "dark"
-        background = "#20252b" if dark else "#f5f6f8"
-        foreground = "#edf1f5" if dark else "#20242a"
-        field = "#2b3138" if dark else "#ffffff"
-        button = "#3a4b5d" if dark else "#e7edf4"
-        active = "#506b87" if dark else "#d4e2f1"
+        palette = theme_palette(self.ui_theme, self.ui_accent_color)
+        compact = self.ui_density == "compact"
+        background = palette["background"]
+        foreground = palette["text_primary"]
+        field = palette["surface"]
+        button = palette["surface_raised"]
         style = ttk.Style(self)
         style.theme_use("clam")
-        muted = "#aeb8c4" if dark else "#687586"
-        accent = "#527ca3" if dark else "#3978b8"
-        accent_active = "#648fb6" if dark else "#2f699f"
-        border = "#3a434e" if dark else "#d9e0e8"
-        danger = "#ff9189" if dark else "#b42318"
-        style.configure(".", background=background, foreground=foreground)
+        muted = palette["text_secondary"]
+        accent = palette["accent"]
+        accent_active = palette["accent_hover"]
+        border = palette["border"]
+        danger = palette["danger"]
+        button_padding = (7, 4) if compact else (9, 6)
+        style.configure(".", background=background, foreground=foreground, font=self.ui_font(10))
         style.configure("TFrame", background=background)
         style.configure("TLabel", background=background, foreground=foreground)
         style.configure("TLabelframe", background=background, foreground=foreground,
-                        bordercolor=border, relief="solid")
+                        bordercolor=border, relief="solid",
+                        padding=6 if compact else 10)
         style.configure("TLabelframe.Label", background=background, foreground=foreground)
-        style.configure("TButton", background=button, foreground=foreground, padding=(9, 6), borderwidth=0)
-        style.map("TButton", background=[("active", active)])
-        style.configure("Accent.TButton", background=accent, foreground="#ffffff", padding=(14, 7),
-                        borderwidth=0, font=("Segoe UI", 10, "bold"))
+        style.configure("TButton", background=button, foreground=foreground,
+                        padding=button_padding, borderwidth=0)
+        style.map("TButton", background=[("active", palette["accent_hover"])])
+        style.configure("Accent.TButton", background=accent,
+                        foreground=palette["accent_foreground"],
+                        padding=(12, 6) if compact else (14, 7),
+                        borderwidth=0, font=self.ui_font(10, "bold"))
         style.map("Accent.TButton", background=[("active", accent_active), ("disabled", button)],
                   foreground=[("disabled", muted)])
         style.configure("TEntry", fieldbackground=field, foreground=foreground,
                         bordercolor=border, lightcolor=border, darkcolor=border)
         style.configure("TCombobox", fieldbackground=field, background=button, foreground=foreground)
         style.map("TCombobox", fieldbackground=[("readonly", field)], foreground=[("readonly", foreground)])
-        style.configure("TCheckbutton", background=background, foreground=foreground)
-        style.configure("TPanedwindow", background=background)
-        style.configure("Status.TLabel", background=background, foreground=muted, font=("Segoe UI", 9))
-        style.configure("Counter.TLabel", background=background, foreground=muted, font=("Segoe UI", 9))
+        style.configure("TCheckbutton", background=background, foreground=foreground,
+                        font=self.ui_font(10))
+        style.configure("TPanedwindow", background=background, sashthickness=5 if compact else 7)
+        style.configure("Status.TLabel", background=background, foreground=muted,
+                        font=self.ui_font(9))
+        style.configure("Counter.TLabel", background=background, foreground=muted,
+                        font=self.ui_font(9))
         style.configure("Counter.OverLimit.TLabel", background=background, foreground=danger,
-                        font=("Segoe UI", 9, "bold"))
-        legend_colors = (
-            ("#94d2a7", "#24723e") if dark else ("#216b3a", "#216b3a"),
-            ("#e4c66d", "#80651f") if dark else ("#82600a", "#82600a"),
-            ("#e29a96", "#9f4541") if dark else ("#a33832", "#a33832"),
-            ("#c6a27e", "#806346") if dark else ("#805c3d", "#805c3d"),
-        )
-        for rank, (dark_color, light_color) in enumerate(legend_colors):
+                        font=self.ui_font(9, "bold"))
+        legend_colors = (palette["success"], palette["warning"],
+                         palette["danger"], palette["text_secondary"])
+        for rank, color in enumerate(legend_colors):
             style.configure(f"Availability{rank}.TLabel",
-                            foreground=dark_color if dark else light_color,
-                            background=background, font=("Segoe UI", 8, "bold"))
+                            foreground=color, background=background,
+                            font=self.ui_font(8, "bold"))
         self.configure(background=background)
+        if hasattr(self, "outer_frame"):
+            self.outer_frame.configure(padding=10 if compact else 14)
         self.apply_widget_theme(self)
         if hasattr(self, "profile_list"):
             self.refresh_profiles()
@@ -1310,9 +1617,27 @@ class PlannerApp(tk.Tk):
         self.refresh_toggle_labels()
 
     def toggle_ui_theme(self) -> None:
-        self.ui_theme = "light" if self.ui_theme == "dark" else "dark"
-        self.data["ui_theme"] = self.ui_theme
+        self.ui_theme = "adwaita-dark" if self.ui_theme == "light" else "light"
+        self.data.update(normalize_appearance_preferences({
+            **self.data, "ui_theme": self.ui_theme,
+        }))
+        self.ui_accent_color = self.data["ui_accent_color"]
         self.apply_ui_theme()
+        self.save_data()
+
+    def open_appearance(self) -> None:
+        dialog = AppearanceDialog(self)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        self.data.update(dialog.result)
+        self.ui_theme = dialog.result["ui_theme"]
+        self.ui_accent_color = dialog.result["ui_accent_color"]
+        self.ui_font_scale = dialog.result["ui_font_scale"]
+        self.ui_density = dialog.result["ui_density"]
+        self.ui_reduce_motion = dialog.result["ui_reduce_motion"]
+        self.apply_ui_theme()
+        self.load_profile(self.current_index)
         self.save_data()
 
     def toggle_ui_language(self) -> None:
@@ -1347,12 +1672,19 @@ class PlannerApp(tk.Tk):
         self.profile_order = [ordered_indices[index] for index in visible_indexes]
         self.profile_list.delete(0, "end")
         selected_list_index: int | None = None
-        dark = self.ui_theme == "dark"
+        palette = theme_palette(self.ui_theme, self.ui_accent_color)
         colors = (
-            ("#284637", "#345743", "#4d3031", "#493c30")
-            if dark else ("#e0f1e4", "#fff2cf", "#fae4e3", "#eee1d3")
+            palette["success_surface"],
+            palette["warning_surface"],
+            palette["danger_surface"],
+            palette["locked_surface"],
         )
-        foregrounds = ("#e5f3e9", "#fff2cf", "#fae4e3", "#f1e5d9") if dark else ("#214a2d", "#654d12", "#752d29", "#5e4934")
+        foregrounds = (
+            palette["success"],
+            palette["warning"],
+            palette["danger"],
+            palette["text_primary"],
+        )
         for list_index, source_index in enumerate(self.profile_order):
             profile = self.data["profiles"][source_index]
             self.profile_list.insert("end", profile["name"])
