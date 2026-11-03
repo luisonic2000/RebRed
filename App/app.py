@@ -30,17 +30,19 @@ from community_evidence import apply_evidence
 from workspace import store_draft, get_draft
 from messages import PT, translate_check
 from scroll_workspace import ScrollWorkspace
+from studio_layout import build_studio, toggle_options, toggle_details
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.5-beta"
+APP_VERSION = "1.6-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
 TITLE_CHARACTER_LIMIT = 300
 FONT_SCALE_OPTIONS = (0.85, 0.95, 1.0, 1.1, 1.2, 1.3)
 
 THEME_ACCENTS = {
+    "studio-coral": "#f47c6c",
     "adwaita-dark": "#62a0ea",
     "catppuccin-mocha": "#cba6f7",
     "nord": "#88c0d0",
@@ -49,6 +51,13 @@ THEME_ACCENTS = {
 }
 
 THEME_PALETTES: dict[str, dict[str, str]] = {
+    "studio-coral": {
+        "background": "#1c1d20", "surface": "#242529", "surface_raised": "#2c2d32",
+        "border": "#3c3e44", "text_primary": "#f4f4f6", "text_secondary": "#b4b5be",
+        "success": "#7ddca4", "warning": "#edc073", "danger": "#ff9991",
+        "success_surface": "#253a31", "warning_surface": "#3c3427",
+        "danger_surface": "#402b2c", "locked_surface": "#493a31",
+    },
     "adwaita-dark": {
         "background": "#1e1e20", "surface": "#252528", "surface_raised": "#303034",
         "border": "#414146", "text_primary": "#f4f4f5", "text_secondary": "#b7b7bf",
@@ -1093,6 +1102,7 @@ class AppearanceDialog(tk.Toplevel):
     """Edit lightweight, persisted visual preferences for the planner."""
 
     THEME_LABELS = {
+        "RebRed Studio · Coral": "studio-coral",
         "Adwaita Dark": "adwaita-dark",
         "Catppuccin Mocha": "catppuccin-mocha",
         "Nord": "nord",
@@ -1218,6 +1228,9 @@ class AppearanceDialog(tk.Toplevel):
             self.swatch.configure(background=color)
 
     def save(self) -> None:
+        selected_theme = self.THEME_LABELS.get(self.theme_var.get(), "adwaita-dark")
+        if selected_theme != self.app.ui_theme and self.accent_color == self.app.ui_accent_color:
+            self.accent_color = THEME_ACCENTS[selected_theme]
         self.result = normalize_appearance_preferences({
             "ui_theme": self.THEME_LABELS.get(
                 self.theme_var.get(), "adwaita-dark"
@@ -1270,6 +1283,7 @@ class PlannerApp(tk.Tk):
         self.status_var = tk.StringVar(value="Choose a community to prepare a manual draft.")
         self.repost_notice_var = tk.StringVar(value="")
         self.community_search_var = tk.StringVar(value="")
+        self.community_search_var.trace_add("write", lambda *_args: self.refresh_profiles())
         self.community_count_var = tk.StringVar(value="")
         self.title_count_var = tk.StringVar(value=f"0 / {TITLE_CHARACTER_LIMIT}")
         self.body_count_var = tk.StringVar(value="0 characters")
@@ -1305,6 +1319,9 @@ class PlannerApp(tk.Tk):
         return ("Segoe UI", max(8, round(size * self.ui_font_scale)), weight)
 
     def build_interface(self) -> None:
+        if self.ui_theme == "studio-coral":
+            build_studio(self)
+            return
         style = ttk.Style(self)
         if "vista" in style.theme_names():
             style.theme_use("vista")
@@ -1335,7 +1352,6 @@ class PlannerApp(tk.Tk):
         ttk.Button(search_row, text="Clear", command=lambda: self.community_search_var.set("")).pack(side="right")
         search_entry = ttk.Entry(left, textvariable=self.community_search_var)
         search_entry.pack(fill="x", pady=(0, 4))
-        self.community_search_var.trace_add("write", lambda *_args: self.refresh_profiles())
         ttk.Label(left, textvariable=self.community_count_var).pack(anchor="w", pady=(0, 5))
 
         legend = ttk.Frame(left)
@@ -1503,7 +1519,9 @@ class PlannerApp(tk.Tk):
         ttk.Label(right, text=f"RebRed {APP_VERSION} · Brasília (UTC−3) · Suggested windows are estimates").pack(anchor="w", pady=(4, 0))
 
     def restore_layout(self) -> None:
-        for name, values in self.data.get("layout", {}).items():
+        mode = "studio" if self.ui_theme == "studio-coral" else "classic"
+        saved = self.data.get("layouts", {}).get(mode, self.data.get("layout", {}))
+        for name, values in saved.items():
             pane = self.workspace_panes.get(name)
             if pane is None or not isinstance(values, list):
                 continue
@@ -1513,9 +1531,49 @@ class PlannerApp(tk.Tk):
                     pane.sashpos(index, int(size * min(.9, max(.1, fraction))))
 
     def reset_layout(self) -> None:
-        self.data["layout"] = {"vertical": [.68], "editor": [.62], "notes": [.6]}
+        mode = "studio" if self.ui_theme == "studio-coral" else "classic"
+        self.data.setdefault("layouts", {})[mode] = {"studio-editor": [.6], "studio-details": [.6]} if mode == "studio" else {"vertical": [.68], "editor": [.62], "notes": [.6]}
         self.restore_layout()
         self.save_data()
+
+    def tr(self, text: str) -> str:
+        return UI_PT.get(text, text) if self.ui_language == "pt" else text
+
+    def toggle_studio_options(self) -> None:
+        toggle_options(self)
+
+    def toggle_studio_details(self) -> None:
+        toggle_details(self)
+
+    def toggle_studio_file_list(self) -> None:
+        if self.image_list.winfo_manager():
+            self.image_list.pack_forget()
+        else:
+            self.image_list.pack(fill="x", before=self.image_grid)
+
+    def rebuild_workspace(self) -> None:
+        self.remember_draft()
+        images = list(self.selected_images)
+        self.outer_frame.destroy()
+        self._source_widget_text = {}
+        self._widget_base_fonts = {}
+        self.build_interface()
+        self.capture_ui_texts()
+        self.apply_ui_language()
+        self.apply_ui_theme()
+        self.refresh_creators()
+        self.restore_draft()
+        self.selected_images = images
+        self.load_images()
+        self.refresh_image_grid()
+        self.community_heading.configure(text=self.profile["name"])
+        self.folder_label.configure(text=self.profile.get("folder", "") or self.tr("Choose image folder…"))
+        self.notes_label.configure(text=self.profile.get("rules", {}).get("notes", ""))
+        self.configure_title_tag_control()
+        self.configure_price_control()
+        self.update_repost_controls()
+        self.update_status()
+        self.validate()
 
     def toggle_advanced(self) -> None:
         if self.advanced_visible.get():
@@ -1677,6 +1735,11 @@ class PlannerApp(tk.Tk):
                         font=self.ui_font(9))
         style.configure("Counter.OverLimit.TLabel", background=background, foreground=danger,
                         font=self.ui_font(9, "bold"))
+        style.configure("Studio.Treeview", background=background, fieldbackground=background,
+                        foreground=foreground, rowheight=round(58 * self.ui_font_scale),
+                        borderwidth=0, font=self.ui_font(10))
+        style.map("Studio.Treeview", background=[("selected", "#493b3a")],
+                  foreground=[("selected", foreground)])
         legend_colors = (palette["success"], palette["warning"],
                          palette["danger"], palette["text_secondary"])
         for rank, color in enumerate(legend_colors):
@@ -1684,6 +1747,8 @@ class PlannerApp(tk.Tk):
                             foreground=color, background=background,
                             font=self.ui_font(8, "bold"))
         self.configure(background=background)
+        if hasattr(self, "workspace_scroll"):
+            self.workspace_scroll.canvas.configure(background=background)
         if hasattr(self, "outer_frame"):
             self.outer_frame.configure(padding=10 if compact else 14)
         self.apply_widget_theme(self)
@@ -1706,28 +1771,39 @@ class PlannerApp(tk.Tk):
         self.wait_window(dialog)
         if dialog.result is None:
             return
+        previous_studio = self.ui_theme == "studio-coral"
+        self.remember_draft()
+        self.save_data()
         self.data.update(dialog.result)
         self.ui_theme = dialog.result["ui_theme"]
         self.ui_accent_color = dialog.result["ui_accent_color"]
         self.ui_font_scale = dialog.result["ui_font_scale"]
         self.ui_density = dialog.result["ui_density"]
         self.ui_reduce_motion = dialog.result["ui_reduce_motion"]
-        self.apply_ui_theme()
-        self.load_profile(self.current_index)
+        if previous_studio != (self.ui_theme == "studio-coral"):
+            self.rebuild_workspace()
+        else:
+            self.apply_ui_theme()
+            self.load_profile(self.current_index)
         self.save_data()
 
     def toggle_ui_language(self) -> None:
         self.ui_language = "pt" if self.ui_language != "pt" else "en"
         self.data["ui_language"] = self.ui_language
-        self.apply_ui_language()
-        self.load_profile(self.current_index)
+        if self.ui_theme == "studio-coral":
+            self.rebuild_workspace()
+        else:
+            self.apply_ui_language()
+            self.load_profile(self.current_index)
         self.refresh_profiles()
         self.save_data()
 
     def save_data(self) -> None:
         try:
             if hasattr(self, "workspace_panes"):
-                self.data["layout"] = {name: [pane.sashpos(i) / max(1, pane.winfo_width() if str(pane.cget("orient")) == "horizontal" else pane.winfo_height()) for i in range(len(pane.panes()) - 1)] for name, pane in self.workspace_panes.items()}
+                mode = "studio" if self.ui_theme == "studio-coral" else "classic"
+                layout = {name: [pane.sashpos(i) / max(1, pane.winfo_width() if str(pane.cget("orient")) == "horizontal" else pane.winfo_height()) for i in range(len(pane.panes()) - 1)] for name, pane in self.workspace_panes.items()}
+                self.data.setdefault("layouts", {})[mode] = layout
             write_database(DATA_PATH, self.data)
         except OSError as error:
             messagebox.showerror("Could not save", f"The planner could not save its local data:\n{error}")
@@ -1736,6 +1812,12 @@ class PlannerApp(tk.Tk):
         self.remember_draft()
         self.save_data()
         self.destroy()
+
+    def destroy(self) -> None:
+        # Cancel root-owned timers before destroying their Tcl callbacks.
+        for callback in self.tk.call("after", "info"):
+            self.after_cancel(callback)
+        super().destroy()
 
     def refresh_profiles(self) -> None:
         current_name = self.data["profiles"][self.current_index]["name"] if self.data["profiles"] else ""
@@ -1769,7 +1851,9 @@ class PlannerApp(tk.Tk):
             rank = self.availability_rank(profile)
             labels = ("Bom horário", "Horário estimado", "Fora da janela", "Intervalo pendente") if self.ui_language == "pt" else ("Good window", "Suggested time", "Outside window", "Posting lock")
             self.profile_list.insert("end", f"{profile['name']} · {labels[rank]}")
-            self.profile_list.itemconfig(list_index, background=colors[rank], foreground=foregrounds[rank])
+            studio = self.ui_theme == "studio-coral"
+            row_color = palette["background"] if studio and rank != 3 else colors[rank]
+            self.profile_list.itemconfig(list_index, background=row_color, foreground=foregrounds[rank])
             if profile["name"] == current_name:
                 selected_list_index = list_index
         if selected_list_index is not None:
@@ -2292,20 +2376,26 @@ class PlannerApp(tk.Tk):
         for widget in self.image_grid.winfo_children():
             widget.destroy()
         self._grid_photos = []
+        studio = self.ui_theme == "studio-coral"
+        columns = 2 if studio else 3
+        for column in range(columns):
+            self.image_grid.columnconfigure(column, weight=1)
+        if studio and not self.selected_images:
+            ttk.Label(self.image_grid, text=self.tr("Choose a folder and prepare a draft to select images."), wraplength=280, anchor="center", style="Status.TLabel").grid(row=0, column=0, columnspan=2, sticky="nsew", pady=70)
         for index, path in enumerate(self.selected_images):
             try:
                 with Image.open(path) as source:
-                    preview = ImageOps.contain(source.convert("RGB"), (90, 66))
+                    preview = ImageOps.fit(source.convert("RGB"), (180, 108)) if studio else ImageOps.contain(source.convert("RGB"), (90, 66))
                 photo = ImageTk.PhotoImage(preview)
                 self._grid_photos.append(photo)
                 tile = ttk.Label(self.image_grid, image=photo, text=f"{index + 1}. {path.name[:18]}", compound="top")
-                tile.grid(row=index // 3, column=index % 3, sticky="nsew", padx=3, pady=3)
+                tile.grid(row=index // columns, column=index % columns, sticky="nsew", padx=5, pady=5)
                 tile.bind("<ButtonPress-1>", lambda event, position=index: setattr(self, "_drag_image_index", position))
                 tile.bind("<ButtonRelease-1>", self.finish_image_reorder)
                 tile.bind("<B1-Motion>", self.maybe_start_external_drag)
                 tile.image_index = index
             except (OSError, ValueError):
-                ttk.Label(self.image_grid, text=f"{index + 1}. {path.name}").grid(row=index // 3, column=index % 3)
+                ttk.Label(self.image_grid, text=f"{index + 1}. {path.name}").grid(row=index // columns, column=index % columns)
 
     def finish_image_reorder(self, event) -> None:
         target = self.winfo_containing(event.x_root, event.y_root)
@@ -2476,6 +2566,8 @@ class PlannerApp(tk.Tk):
         errors = sum(level == "error" for level, _text in checks)
         warnings = sum(level == "warning" for level, _text in checks)
         summary = f"{errors} ajustes necessários · {warnings} recomendações" if self.ui_language == "pt" else f"{errors} required changes · {warnings} recommendations"
+        if self.ui_theme == "studio-coral" and hasattr(self, "validation_summary_var"):
+            self.validation_summary_var.set(("✓ " if errors == 0 else "! ") + summary)
         self.validation_text.insert("end", summary + "\n\n")
         for level, text in checks:
             prefix = {"ok": "✓", "error": "✕", "warning": "!"}[level]

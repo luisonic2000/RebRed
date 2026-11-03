@@ -2,6 +2,15 @@
 import re
 
 PT = {
+    "Manage communities": "Gerenciar comunidades",
+    "Prepare your next post": "Prepare sua próxima publicação",
+    "Your draft": "Seu rascunho",
+    "Choose images": "Escolher imagens",
+    "Drag to reorder or send files": "Arraste para organizar ou enviar arquivos",
+    "View details": "Ver detalhes",
+    "Choose a folder and prepare a draft to select images.": "Escolha uma pasta e prepare um rascunho para selecionar imagens.",
+    "Title copied.": "Título copiado.",
+    "Body copied.": "Texto copiado.",
     "Do not put contact details or links in this title.": "Não inclua contatos ou links neste título.",
     "Paid offers are only allowed on weekends in this community.": "Ofertas pagas só são permitidas nos fins de semana nesta comunidade.",
     "DnD Thursdays are text-only using Eastern US timing. Confirm image posting is open.": "Às quintas, o DnD aceita apenas texto, seguindo o horário do leste dos EUA. Confira se imagens estão liberadas.",
