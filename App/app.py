@@ -24,12 +24,14 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from PIL import Image, ImageOps, ImageTk
+from storage import write_database, read_with_recovery
+from draft_rules import unresolved_tokens, blocked_urls, rule_review_due
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.2-beta"
+APP_VERSION = "1.3-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
 TITLE_CHARACTER_LIMIT = 300
 FONT_SCALE_OPTIONS = (0.85, 0.95, 1.0, 1.1, 1.2, 1.3)
@@ -683,7 +685,9 @@ def load_data() -> dict[str, Any]:
     if not DATA_PATH.exists():
         return default_data()
     try:
-        loaded = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+        loaded, recovered = read_with_recovery(DATA_PATH)
+        if recovered:
+            messagebox.showwarning("Data recovery", "Recovered the last valid backup. The damaged file has not been overwritten.")
         if not isinstance(loaded.get("profiles"), list) or not isinstance(loaded.get("history"), list):
             raise ValueError("Invalid planner data")
         # Migrate first-version planner files without losing a person's work.
@@ -1428,6 +1432,9 @@ class PlannerApp(tk.Tk):
         image_frame.columnconfigure(0, weight=3)
         image_frame.columnconfigure(1, weight=2)
         image_frame.rowconfigure(0, weight=1)
+        self.image_grid = ttk.Frame(image_column)
+        self.image_grid.pack(fill="x", pady=6)
+        self._grid_photos = []
         self.image_list = tk.Listbox(image_frame, exportselection=False, selectmode="extended", height=9)
         self.image_list.grid(row=0, column=0, sticky="nsew")
         self.image_list.bind("<<ListboxSelect>>", self.on_image_select)
@@ -1447,6 +1454,8 @@ class PlannerApp(tk.Tk):
         ttk.Label(image_actions, text="The app reads these files only. It never copies or creates artwork.", wraplength=220).pack(side="left", padx=(8, 0))
 
         bottom = ttk.PanedWindow(content_stack, orient="horizontal")
+        self.workspace_panes = {"vertical": content_stack, "editor": editor, "notes": bottom}
+        self.after(250, self.restore_layout)
         content_stack.add(bottom, weight=2)
         validation_box = ttk.LabelFrame(bottom, text="Live rule check", padding=8)
         bottom.add(validation_box, weight=3)
@@ -1464,6 +1473,24 @@ class PlannerApp(tk.Tk):
         self.mark_posted_button = ttk.Button(footer, text="Mark as posted", command=self.mark_posted)
         self.mark_posted_button.pack(side="right")
         ttk.Button(footer, text="Save community settings", command=self.save_community_settings).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Undo last publication", command=self.undo_last_post).pack(side="right", padx=4)
+        ttk.Button(footer, text="Restore layout", command=self.reset_layout).pack(side="right", padx=4)
+        ttk.Label(right, text=f"RebRed {APP_VERSION} · Brasília (UTC−3) · Suggested windows are estimates").pack(anchor="w", pady=(4, 0))
+
+    def restore_layout(self) -> None:
+        for name, values in self.data.get("layout", {}).items():
+            pane = self.workspace_panes.get(name)
+            if pane is None or not isinstance(values, list):
+                continue
+            size = pane.winfo_width() if pane.cget("orient") == "horizontal" else pane.winfo_height()
+            for index, fraction in enumerate(values[:len(pane.panes()) - 1]):
+                if isinstance(fraction, (int, float)):
+                    pane.sashpos(index, int(size * min(.9, max(.1, fraction))))
+
+    def reset_layout(self) -> None:
+        self.data["layout"] = {"vertical": [.68], "editor": [.62], "notes": [.6]}
+        self.restore_layout()
+        self.save_data()
 
     def capture_ui_texts(self) -> None:
         """Store the original UI labels so the language selector is reversible."""
@@ -1650,7 +1677,9 @@ class PlannerApp(tk.Tk):
 
     def save_data(self) -> None:
         try:
-            DATA_PATH.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+            if hasattr(self, "workspace_panes"):
+                self.data["layout"] = {name: [pane.sashpos(i) / max(1, pane.winfo_width() if pane.cget("orient") == "horizontal" else pane.winfo_height()) for i in range(len(pane.panes()) - 1)] for name, pane in self.workspace_panes.items()}
+            write_database(DATA_PATH, self.data)
         except OSError as error:
             messagebox.showerror("Could not save", f"The planner could not save its local data:\n{error}")
 
@@ -1687,8 +1716,9 @@ class PlannerApp(tk.Tk):
         )
         for list_index, source_index in enumerate(self.profile_order):
             profile = self.data["profiles"][source_index]
-            self.profile_list.insert("end", profile["name"])
             rank = self.availability_rank(profile)
+            labels = ("Bom horário", "Horário estimado", "Fora da janela", "Intervalo pendente") if self.ui_language == "pt" else ("Good window", "Suggested time", "Outside window", "Posting lock")
+            self.profile_list.insert("end", f"{profile['name']} · {labels[rank]}")
             self.profile_list.itemconfig(list_index, background=colors[rank], foreground=foregrounds[rank])
             if profile["name"] == current_name:
                 selected_list_index = list_index
@@ -1748,6 +1778,7 @@ class PlannerApp(tk.Tk):
         self.title_entry.delete(0, "end")
         self.body_text.delete("1.0", "end")
         self.load_images()
+        self.refresh_image_grid()
         self.update_status()
         self.update_repost_controls()
         self.validate()
@@ -1832,6 +1863,7 @@ class PlannerApp(tk.Tk):
             selection = selection[:limit]
         paths = self.image_paths()
         self.selected_images = [paths[index] for index in selection if index < len(paths)]
+        self.refresh_image_grid()
         if self.selected_images:
             self.show_image_preview(self.selected_images[0])
         else:
@@ -2040,7 +2072,8 @@ class PlannerApp(tk.Tk):
         return link_text or handle_text
 
     def rendered_links(self) -> str:
-        allowed = self.profile.get("link_order", [])
+        banned = self.profile.get("rules", {}).get("banned_domains", [])
+        allowed = [key for key in self.profile.get("link_order", []) if not blocked_urls(self.creator.get("links", {}).get(key, ""), banned)]
         portfolio_keys = ["vgen", "artstation", "behance", "cara", "website"]
         social_keys = ["instagram", "bluesky", "x", "linkedin", "twitch", "youtube", "kofi"]
         allowed_set = set(allowed)
@@ -2126,6 +2159,10 @@ class PlannerApp(tk.Tk):
         return list(ART_SHOWCASE_TITLES), list(ART_SHOWCASE_BODIES)
 
     def prepare_draft(self) -> None:
+        current = (self.title_entry.get(), self.body_text.get("1.0", "end").strip())
+        if any(current) and current != getattr(self, "_generated_draft", None):
+            if not messagebox.askyesno("Replace draft", "Replace the current edited draft?", parent=self):
+                return
         # Read the visible selector again. This prevents a stale creator index
         # from producing an empty links block after the user changes profiles.
         visible_creator = self.creator_combo.current()
@@ -2159,6 +2196,7 @@ class PlannerApp(tk.Tk):
         body = random.choice(body_choices)
         body = body.replace("{{price_block}}", price_block).replace("{price_block}", price_block)
         self.body_text.insert("1.0", self.render_template(body))
+        self._generated_draft = (self.title_entry.get(), self.body_text.get("1.0", "end").strip())
         paths = self.image_paths()
         if paths:
             unused = [path for path in paths if str(path) not in self.recently_used_images()]
@@ -2176,7 +2214,34 @@ class PlannerApp(tk.Tk):
         else:
             self.selected_images = []
         self.update_status()
+        self.refresh_image_grid()
         self.validate()
+
+    def refresh_image_grid(self) -> None:
+        for widget in self.image_grid.winfo_children():
+            widget.destroy()
+        self._grid_photos = []
+        for index, path in enumerate(self.selected_images):
+            try:
+                with Image.open(path) as source:
+                    preview = ImageOps.contain(source.convert("RGB"), (90, 66))
+                photo = ImageTk.PhotoImage(preview)
+                self._grid_photos.append(photo)
+                tile = ttk.Label(self.image_grid, image=photo, text=f"{index + 1}. {path.name[:18]}", compound="top")
+                tile.grid(row=index // 3, column=index % 3, sticky="nsew", padx=3, pady=3)
+                tile.bind("<ButtonPress-1>", lambda event, position=index: setattr(self, "_drag_image_index", position))
+                tile.bind("<ButtonRelease-1>", self.finish_image_reorder)
+                tile.image_index = index
+            except (OSError, ValueError):
+                ttk.Label(self.image_grid, text=f"{index + 1}. {path.name}").grid(row=index // 3, column=index % 3)
+
+    def finish_image_reorder(self, event) -> None:
+        target = self.winfo_containing(event.x_root, event.y_root)
+        start = getattr(self, "_drag_image_index", None)
+        end = getattr(target, "image_index", None)
+        if start is not None and end is not None and start != end:
+            self.selected_images.insert(end, self.selected_images.pop(start))
+            self.refresh_image_grid()
 
     def next_allowed_time(self) -> datetime:
         last_post = self.last_posted_at(self.profile)
@@ -2222,6 +2287,11 @@ class PlannerApp(tk.Tk):
         lowered_title = title.lower()
         lowered_body = body.lower()
         checks: list[tuple[str, str]] = []
+        tokens = unresolved_tokens(title + "\n" + body)
+        if tokens:
+            checks.append(("error", "Fill template fields: " + ", ".join(tokens)))
+        if rule_review_due(rules):
+            checks.append(("warning", "Community rules need review. Check the official rules before posting."))
 
         if not title:
             checks.append(("error", "Add a title."))
@@ -2297,6 +2367,10 @@ class PlannerApp(tk.Tk):
 
         self.validation_text.config(state="normal")
         self.validation_text.delete("1.0", "end")
+        errors = sum(level == "error" for level, _text in checks)
+        warnings = sum(level == "warning" for level, _text in checks)
+        summary = f"{errors} ajustes necessários · {warnings} recomendações" if self.ui_language == "pt" else f"{errors} required changes · {warnings} recommendations"
+        self.validation_text.insert("end", summary + "\n\n")
         for level, text in checks:
             prefix = {"ok": "✓", "error": "✕", "warning": "!"}[level]
             tag = {"ok": "good", "error": "bad", "warning": "warn"}[level]
@@ -2307,6 +2381,9 @@ class PlannerApp(tk.Tk):
         self.validation_text.config(state="disabled")
 
     def copy_text(self, value: str, status: str) -> None:
+        if unresolved_tokens(value):
+            messagebox.showerror("Incomplete draft", "Resolve the template fields before copying.", parent=self)
+            return
         if not value:
             messagebox.showinfo("Nothing to copy", "Prepare or write a draft first.")
             return
@@ -2391,6 +2468,17 @@ class PlannerApp(tk.Tk):
         else:
             self.status_var.set("Post recorded locally. The local posting protection is active.")
 
+    def undo_last_post(self) -> None:
+        entries = [i for i, entry in enumerate(self.data["history"]) if entry.get("profile") == self.profile["name"]]
+        if not entries:
+            return
+        if messagebox.askyesno("Undo publication", "Remove the latest local publication record for this community?", parent=self):
+            self.data["history"].pop(entries[-1])
+            self.save_data()
+            self.refresh_profiles()
+            self.update_status()
+            self.validate()
+
     def add_profile(self) -> None:
         dialog = ProfileDialog(self)
         self.wait_window(dialog)
@@ -2462,6 +2550,8 @@ class PlannerApp(tk.Tk):
         while imported["name"].lower() in existing:
             imported["name"] = f"{original} ({count})"
             count += 1
+        if not messagebox.askyesno("Import community", f"Add community '{imported['name']}'? Existing communities will be kept.", parent=self):
+            return
         self.data["profiles"].append(imported)
         self.current_index = len(self.data["profiles"]) - 1
         self.refresh_profiles()
@@ -2569,6 +2659,8 @@ class PlannerApp(tk.Tk):
             creator.setdefault("link_display", {})
         except (OSError, ValueError, json.JSONDecodeError) as error:
             messagebox.showerror("Import failed", str(error))
+            return
+        if not messagebox.askyesno("Import profile", f"Add creator profile '{creator['name']}'? Existing profiles will be kept.", parent=self):
             return
         self.data["creator_profiles"].append(creator)
         self.creator_index = len(self.data["creator_profiles"]) - 1

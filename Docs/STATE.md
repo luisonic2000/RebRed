@@ -1,10 +1,12 @@
 # Current state
 
-Last verified: 2026-09-28
+Last verified: 2026-11-03
 
-Current source version: `1.2-beta`
+Current source version: `1.3-beta`
 
-Latest Windows delivery: `App/outputs/RebRed-1.2-beta.exe`
+Latest Windows delivery: `App/outputs/RebRed-1.3-beta.exe`
+
+1.3 implementation status: see `PROGRESS-1.3.md`. This is an incremental delivery, not completion of the full requested redesign. 18 tests passed, including Tk appearance and storage recovery. Community-rule source research and the remaining layout work are pending.
 
 Linux AppImages and Windows release executables are built and attached to GitHub Releases by `.github/workflows/release.yml` when a `v*` tag is pushed.
 
