@@ -29,12 +29,13 @@ from draft_rules import unresolved_tokens, blocked_urls, rule_review_due
 from community_evidence import apply_evidence
 from workspace import store_draft, get_draft
 from messages import PT, translate_check
+from scroll_workspace import ScrollWorkspace
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.4-beta"
+APP_VERSION = "1.5-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
 TITLE_CHARACTER_LIMIT = 300
 FONT_SCALE_OPTIONS = (0.85, 0.95, 1.0, 1.1, 1.2, 1.3)
@@ -1236,7 +1237,7 @@ class PlannerApp(tk.Tk):
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
         self.geometry("1220x790")
-        self.minsize(980, 650)
+        self.minsize(800, 560)
         # Start maximized while preserving normal desktop controls. Tk uses a
         # different maximize API on common Linux window managers.
         if sys.platform.startswith("win"):
@@ -1314,12 +1315,15 @@ class PlannerApp(tk.Tk):
         self.outer_frame.rowconfigure(1, weight=1)
         toolbar = ttk.Frame(self.outer_frame, padding=6)
         toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        ttk.Label(toolbar, text="Creator profile").pack(side="left", padx=(0, 8))
+        ttk.Label(toolbar, text="Creator profile").grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.creator_combo = ttk.Combobox(toolbar, state="readonly", width=24)
-        self.creator_combo.pack(side="left")
+        self.creator_combo.grid(row=0, column=1, sticky="ew")
+        toolbar.columnconfigure(1, weight=1)
         self.creator_combo.bind("<<ComboboxSelected>>", self.on_creator_select)
-        for label, command in (("Add", self.add_creator), ("Edit", self.edit_creator), ("Remove profile", self.remove_creator), ("Export", self.export_creator), ("Import creator template", self.import_creator)):
-            ttk.Button(toolbar, text=label, command=command).pack(side="left", padx=3)
+        profile_actions = ttk.Frame(toolbar)
+        profile_actions.grid(row=1, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        for index, (label, command) in enumerate((("Add", self.add_creator), ("Edit", self.edit_creator), ("Remove profile", self.remove_creator), ("Export", self.export_creator), ("Import creator template", self.import_creator))):
+            ttk.Button(profile_actions, text=label, command=command).grid(row=index // 3, column=index % 3, padx=3, pady=2, sticky="ew")
 
         left = ttk.Frame(self.outer_frame, padding=8)
         left.grid(row=1, column=0, sticky="nsew", padx=(0, 14))
@@ -1356,8 +1360,9 @@ class PlannerApp(tk.Tk):
         ttk.Button(left, text="Import community template", command=self.import_profile).pack(fill="x")
         ttk.Button(left, text="Copy settings to…", command=self.copy_community_settings).pack(fill="x", pady=(4, 0))
 
-        right = ttk.Frame(self.outer_frame, padding=8)
-        right.grid(row=1, column=1, sticky="nsew")
+        self.workspace_scroll = ScrollWorkspace(self.outer_frame)
+        self.workspace_scroll.grid(row=1, column=1, sticky="nsew")
+        right = self.workspace_scroll.content
         header = ttk.Frame(right)
         header.pack(fill="x")
         self.community_heading = ttk.Label(header, text="", font=self.ui_font(18, "bold"))
@@ -2219,7 +2224,8 @@ class PlannerApp(tk.Tk):
 
     def prepare_draft(self) -> None:
         if self.profile.get("rules", {}).get("manual_description"):
-            messagebox.showinfo("Write your own description", "This community requires a genuine description of your artwork. Write it yourself in the draft body. RebRed will check its length and tags.", parent=self)
+            text = "Escreva seu próprio texto no corpo do rascunho, seguindo as notas da comunidade. O RebRed continuará verificando os requisitos configurados." if self.ui_language == "pt" else "Write your own text in the draft body following the community notes. RebRed will still check the configured requirements."
+            messagebox.showinfo("Texto manual" if self.ui_language == "pt" else "Manual draft", text, parent=self)
             return
         current = (self.title_entry.get(), self.body_text.get("1.0", "end").strip())
         if any(current) and current != getattr(self, "_generated_draft", None):
@@ -2296,6 +2302,7 @@ class PlannerApp(tk.Tk):
                 tile.grid(row=index // 3, column=index % 3, sticky="nsew", padx=3, pady=3)
                 tile.bind("<ButtonPress-1>", lambda event, position=index: setattr(self, "_drag_image_index", position))
                 tile.bind("<ButtonRelease-1>", self.finish_image_reorder)
+                tile.bind("<B1-Motion>", self.maybe_start_external_drag)
                 tile.image_index = index
             except (OSError, ValueError):
                 ttk.Label(self.image_grid, text=f"{index + 1}. {path.name}").grid(row=index // 3, column=index % 3)
@@ -2307,6 +2314,23 @@ class PlannerApp(tk.Tk):
         if start is not None and end is not None and start != end:
             self.selected_images.insert(end, self.selected_images.pop(start))
             self.refresh_image_grid()
+
+    def maybe_start_external_drag(self, event) -> None:
+        # Internal movement keeps reordering; leaving the grid starts Shell drag.
+        x, y = self.image_grid.winfo_rootx(), self.image_grid.winfo_rooty()
+        if x <= event.x_root <= x + self.image_grid.winfo_width() and y <= event.y_root <= y + self.image_grid.winfo_height():
+            return
+        if not sys.platform.startswith("win") or getattr(self, "_native_drag_active", False):
+            return
+        self._native_drag_active = True
+        try:
+            from windows_drag import drag_files
+            result = drag_files(self.selected_images)
+            self.status_var.set(("Arraste concluído. Confira os arquivos no destino." if result else "Arraste cancelado ou destino incompatível. Você pode usar Copiar imagens.") if self.ui_language == "pt" else ("Drag finished. Check the destination files." if result else "Drag cancelled or target unsupported. You can use Copy images."))
+        except Exception as error:
+            messagebox.showerror("File drag", str(error), parent=self)
+        finally:
+            self._native_drag_active = False
 
     def next_allowed_time(self) -> datetime:
         last_post = self.last_posted_at(self.profile)
@@ -2329,7 +2353,12 @@ class PlannerApp(tk.Tk):
     def update_status(self) -> None:
         time_text = "now" if self.availability_rank(self.profile) == 0 else self.next_allowed_time().strftime("%d %b, %H:%M")
         image_text = f"{len(self.selected_images)} image(s) selected" if self.selected_images else "no image selected"
-        self.status_var.set(f"{self.availability_text()}  |  Next allowed: {time_text}  |  {image_text}")
+        if self.ui_language == "pt":
+            rank = self.availability_rank(self.profile)
+            state = ("Bom horário estimado", "Fora do horário estimado", "Fora dos dias estimados", "Intervalo obrigatório pendente")[rank]
+            self.status_var.set(f"{state} | Próxima janela: {time_text} | {len(self.selected_images)} imagens")
+        else:
+            self.status_var.set(f"{self.availability_text()}  |  Next suggested window: {time_text}  |  {image_text}")
 
     def update_draft_counters(self) -> None:
         if not hasattr(self, "title_entry"):
@@ -2353,6 +2382,9 @@ class PlannerApp(tk.Tk):
         lowered_body = body.lower()
         checks: list[tuple[str, str]] = []
         minimum_body = rules.get("min_body_chars", 0)
+        recommended_words = rules.get("recommended_body_words", 0)
+        if recommended_words and len(body.split()) < recommended_words:
+            checks.append(("warning", f"Aim for at least {recommended_words} words explaining your offer."))
         if minimum_body and len(body) < minimum_body:
             checks.append(("error", f"Body needs at least {minimum_body} characters describing your artwork."))
         if rules.get("no_title_contact") and re.search(r"https?://|@|discord", title, re.IGNORECASE):

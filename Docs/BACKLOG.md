@@ -2,7 +2,7 @@
 
 ## High
 
-- Complete remaining work enumerated in PROGRESS-1.4.md: other community reviews, full UI translation, responsive layout, external file dragging and the outdated release workflow.
+- Complete remaining work in PROGRESS-1.5.md: other community reviews, full dialog translation, interactive native drag tests, more refined responsive layouts and CI verification.
 
 - Manually verify the `Mark as posted` flow in the Windows interface: brown community state, footer notice, and enabled draft preparation.
 

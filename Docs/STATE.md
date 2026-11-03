@@ -2,31 +2,16 @@
 
 Last verified: 2026-11-03
 
-Current source version: `1.4-beta`
+Current source: 1.5-beta. Windows delivery: App/outputs/RebRed-1.5-beta.exe.
 
-Latest Windows delivery: `App/outputs/RebRed-1.4-beta.exe`
+Repository: https://github.com/luisonic2000/RebRed
 
-Current implementation status: see `PROGRESS-1.4.md`. 24 tests passed, including Tk draft switching and controls, storage recovery, and rule migrations. Seven communities have source-backed partial reviews. Further community research and layout work remain pending. The old release workflow is version-pinned to 1.2; do not use it to publish this build.
+Working branch: feat/reliability-layout-1.3. Main is not automatically merged.
 
-Linux AppImages and Windows release executables are built and attached to GitHub Releases by `.github/workflows/release.yml` when a `v*` tag is pushed.
+Current progress and manual checklist: PROGRESS-1.5.md. Prior incremental work is recorded in PROGRESS-1.3.md and PROGRESS-1.4.md.
 
-Current preview work includes persisted appearance presets and accessible text scaling. Platform downloads are published after the Windows and Linux release workflows both pass.
+27 tests passed, including actual Tk windows with temporary data, Windows file data-object creation, storage recovery and rule migrations. Syntax checks passed. The executable embeds no local JSON or profiles.
 
-Public source repository: `https://github.com/luisonic2000/RebRed`
+Release workflow now targets Windows and builds independently of version-specific specs. GitHub CI and public release publication have not yet been verified; no tag was pushed.
 
-Verified locally for 1.2-beta:
-
-- `python -m unittest discover -s App\tests -v` — 14 tests passed, including a real Tk appearance-dialog check using a temporary data file.
-- `python -m py_compile App\app.py App\tests\test_appearance.py App\tests\test_appearance_ui.py App\tests\test_posting_lock.py App\tests\test_ui_helpers.py`
-- The Windows 1.2-beta executable starts in an isolated temporary directory without accessing the user's profile.
-- `git diff --check` reports no whitespace errors.
-
-Known limitations:
-
-- Manual user testing is still recommended for image selection, clipboard file paste, dialogs, and browser opening.
-- Reddit community rules can change; built-in checks remain guidance only.
-
-Release status:
-
-- The 1.2-beta Windows executable is built locally at `App/outputs/RebRed-1.2-beta.exe`.
-- The Linux AppImage and public 1.2-beta release have not been built or published; the release workflow builds and publishes both platforms after a `v*` tag is pushed.
+Remaining work: interactive drag-and-drop testing in browsers, full dialog translations, remaining community source research, additional code modularization and more refined responsive layouts. Seventeen packs have partial source reviews, not exhaustive verification. Suggested engagement windows remain estimates.

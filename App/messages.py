@@ -1,5 +1,10 @@
 """Portuguese translations for live draft checks and workspace controls."""
+import re
+
 PT = {
+    "Do not put contact details or links in this title.": "Não inclua contatos ou links neste título.",
+    "Paid offers are only allowed on weekends in this community.": "Ofertas pagas só são permitidas nos fins de semana nesta comunidade.",
+    "DnD Thursdays are text-only using Eastern US timing. Confirm image posting is open.": "Às quintas, o DnD aceita apenas texto, seguindo o horário do leste dos EUA. Confira se imagens estão liberadas.",
     "Undo last publication": "Desfazer última publicação",
     "Restore layout": "Restaurar layout",
     "Customize draft": "Personalizar rascunho",
@@ -36,6 +41,18 @@ def translate_check(text, language):
         return text
     if text in PT:
         return PT[text]
+    patterns = [
+        (r"Body needs at least (\d+) characters describing your artwork\.", r"O corpo precisa de pelo menos \1 caracteres descrevendo sua arte."),
+        (r"Title exceeds Reddit's (\d+)-character limit\.", r"O título ultrapassa o limite de \1 caracteres do Reddit."),
+        (r"Personal minimum is \$(.+) USD\.", r"O preço pessoal mínimo é US$ \1."),
+        (r"Commercial minimum is \$(.+) USD\.", r"O preço comercial mínimo é US$ \1."),
+        (r"This community does not allow (.+)\.", r"Esta comunidade não permite \1."),
+        (r"This community is locked until (.+) after the recorded post\.", r"Esta comunidade está bloqueada até \1 após a publicação registrada."),
+        (r"Wait until (.+) according to this profile\.", r"Próximo horário estimado: \1. Isso não é um bloqueio obrigatório."),
+    ]
+    for pattern, replacement in patterns:
+        if re.fullmatch(pattern, text):
+            return re.sub(pattern, replacement, text)
     for prefix, translated in PREFIXES.items():
         if text.startswith(prefix):
             return translated + text[len(prefix):]
