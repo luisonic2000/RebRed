@@ -2,7 +2,9 @@
 
 Last verified: 2026-11-03
 
-Current source: 1.6-beta. Windows delivery: App/outputs/RebRed-1.6-beta.exe.
+Current source: 1.7-beta. Windows delivery: App/outputs/RebRed-1.7-beta.exe.
+
+1.7 only moves Studio to the last position in Appearance. Further Studio redesign is deferred at the user's request. Existing theme choices remain saved.
 
 Repository: https://github.com/luisonic2000/RebRed
 

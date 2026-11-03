@@ -36,7 +36,7 @@ from studio_layout import build_studio, toggle_options, toggle_details
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.6-beta"
+APP_VERSION = "1.7-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
 TITLE_CHARACTER_LIMIT = 300
 FONT_SCALE_OPTIONS = (0.85, 0.95, 1.0, 1.1, 1.2, 1.3)
@@ -1102,12 +1102,12 @@ class AppearanceDialog(tk.Toplevel):
     """Edit lightweight, persisted visual preferences for the planner."""
 
     THEME_LABELS = {
-        "RebRed Studio · Coral": "studio-coral",
         "Adwaita Dark": "adwaita-dark",
         "Catppuccin Mocha": "catppuccin-mocha",
         "Nord": "nord",
         "Dracula": "dracula",
         "Light": "light",
+        "RebRed Studio · Coral": "studio-coral",
     }
     SCALE_LABELS = {
         "85%": 0.85,
