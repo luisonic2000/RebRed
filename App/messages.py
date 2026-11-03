@@ -1,0 +1,42 @@
+"""Portuguese translations for live draft checks and workspace controls."""
+PT = {
+    "Undo last publication": "Desfazer última publicação",
+    "Restore layout": "Restaurar layout",
+    "Customize draft": "Personalizar rascunho",
+    "Official rules URL": "Endereço das regras oficiais",
+    "Verification status": "Estado da verificação",
+    "Add a title.": "Adicione um título.",
+    "Title needs an @handle for this community.": "O título precisa do seu @arroba nesta comunidade.",
+    "Title format is present.": "O título foi preenchido.",
+    "Add a clear price or budget in USD.": "Informe um preço ou orçamento claro em USD.",
+    "A price or budget was found.": "Preço ou orçamento encontrado.",
+    "Add a direct public portfolio link.": "Adicione um link direto de portfólio público.",
+    "Portfolio information was found.": "Informações de portfólio encontradas.",
+    "Add the required secondary social link.": "Adicione o link de rede social secundária exigido.",
+    "Secondary social link was found.": "Link de rede social secundária encontrado.",
+    "Select one or more images before you post.": "Selecione uma ou mais imagens antes de publicar.",
+    "Community rules need review. Check the official rules before posting.": "As regras precisam de revisão. Confira a fonte oficial antes de publicar.",
+    "The current suggested posting window is open.": "Você está na janela de horário recomendada.",
+    "The local interval allows a post now.": "O intervalo local já permite publicar.",
+    "Selected images were not used recently in this community.": "As imagens selecionadas não foram usadas recentemente nesta comunidade.",
+    "At least one selected image was used in this community inside the configured interval.": "Uma das imagens foi usada nesta comunidade dentro do intervalo configurado.",
+    "This community profile does not allow a commission advertisement. Use its community notes instead.": "Este perfil não permite anúncio de commissions. Consulte as notas da comunidade.",
+}
+PREFIXES = {
+    "Fill template fields: ": "Preencha os campos do modelo: ",
+    "Title cannot include: ": "O título não pode conter: ",
+    "Title needs: ": "O título precisa conter: ",
+    "Title needs one of: ": "O título precisa de uma das opções: ",
+    "Post body needs: ": "O corpo precisa conter: ",
+}
+
+
+def translate_check(text, language):
+    if language != "pt":
+        return text
+    if text in PT:
+        return PT[text]
+    for prefix, translated in PREFIXES.items():
+        if text.startswith(prefix):
+            return translated + text[len(prefix):]
+    return text

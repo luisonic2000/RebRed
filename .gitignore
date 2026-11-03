@@ -7,3 +7,7 @@ Releases/
 **/*.tmp
 App/rebred_data.json
 App/commission_planner_data.json
+App/outputs/*.exe
+App/outputs/*.AppImage
+**/rebred_data.json.bak
+**/commission_planner_data.json.bak

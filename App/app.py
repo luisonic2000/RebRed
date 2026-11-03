@@ -26,12 +26,15 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 from PIL import Image, ImageOps, ImageTk
 from storage import write_database, read_with_recovery
 from draft_rules import unresolved_tokens, blocked_urls, rule_review_due
+from community_evidence import apply_evidence
+from workspace import store_draft, get_draft
+from messages import PT, translate_check
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SEPARATOR = "\n---\n"
 APP_NAME = "RebRed"
-APP_VERSION = "1.3-beta"
+APP_VERSION = "1.4-beta"
 CREDITS_URL = "https://www.instagram.com/reborn_neo_art/"
 TITLE_CHARACTER_LIMIT = 300
 FONT_SCALE_OPTIONS = (0.85, 0.95, 1.0, 1.1, 1.2, 1.3)
@@ -379,6 +382,9 @@ UI_PT = {
 }
 
 
+UI_PT.update(PT)
+
+
 def application_dir() -> Path:
     """Keep the planner database beside a portable executable when frozen."""
     if getattr(sys, "frozen", False):
@@ -672,8 +678,11 @@ def default_data() -> dict[str, Any]:
                 "Este é o único perfil que prepara o resultado em português."
             )
     blank_creator = {"name": "My artist profile", "artist_name": "", "handle": "", "personal_price": 0, "commercial_price": 0, "use_emojis": False, "payment_note": "", "payment_note_pt": "", "contact_note": "", "contact_note_pt": "", "reviews_note": "", "reviews_link": "", "links": {}, "platform_handles": {}, "link_display": {}}
+    profiles = [anime, *communities]
+    for profile in profiles:
+        apply_evidence(profile)
     return {
-        "profiles": [anime, *communities],
+        "profiles": profiles,
         "creator_profiles": [blank_creator],
         "history": [],
         "image_count": 6,
@@ -762,6 +771,8 @@ def load_data() -> dict[str, Any]:
                 for option in starter[key]:
                     if option not in existing:
                         existing.append(option)
+        for profile in loaded["profiles"]:
+            apply_evidence(profile)
         return loaded
     except (OSError, ValueError, json.JSONDecodeError):
         messagebox.showwarning(
@@ -823,6 +834,8 @@ class ProfileDialog(tk.Toplevel):
         self.title_prefix_var = tk.StringVar(value=rules.get("title_prefix", ""))
         self.promotion_var = tk.BooleanVar(value=rules.get("promotion_allowed", True))
         self.reviewed_var = tk.StringVar(value=rules.get("last_reviewed", ""))
+        self.source_url_var = tk.StringVar(value=rules.get("source_url", f"https://www.reddit.com/r/{self.profile['name']}/about/rules/"))
+        self.verification_var = tk.StringVar(value=rules.get("verification_status", "unverified"))
 
         def row(label: str, widget: tk.Widget, index: int) -> None:
             ttk.Label(form, text=label).grid(row=index, column=0, sticky="nw", padx=(0, 12), pady=5)
@@ -892,6 +905,8 @@ class ProfileDialog(tk.Toplevel):
         self.notes_text = tk.Text(form, height=4, wrap="word")
         self.notes_text.insert("1.0", rules.get("notes", ""))
         self.notes_text.grid(row=28, column=0, columnspan=2, sticky="nsew")
+        row("Official rules URL", ttk.Entry(form, textvariable=self.source_url_var), 29)
+        row("Verification status", ttk.Combobox(form, textvariable=self.verification_var, values=["unverified", "partial", "verified"], state="readonly"), 30)
 
         actions = ttk.Frame(form)
         actions.grid(row=29, column=0, columnspan=2, sticky="e", pady=(14, 0))
@@ -959,6 +974,7 @@ class ProfileDialog(tk.Toplevel):
             "titles": titles,
             "bodies": bodies,
             "rules": {
+                **self.profile.get("rules", {}),
                 "require_handle": self.handle_var.get(),
                 "banned_title_terms": parse_csv(self.banned_title_var.get()),
                 "required_title_terms": parse_csv(self.required_title_var.get()),
@@ -974,6 +990,8 @@ class ProfileDialog(tk.Toplevel):
                 "required_body_terms": parse_csv(self.required_body_var.get()),
                 "notes": self.notes_text.get("1.0", "end").strip(),
                 "last_reviewed": self.reviewed_var.get().strip(),
+                "source_url": self.source_url_var.get().strip(),
+                "verification_status": self.verification_var.get(),
             },
         }
         self.destroy()
@@ -1238,6 +1256,7 @@ class PlannerApp(tk.Tk):
         self.current_index = 0
         self.creator_index = 0
         self.profile_order: list[int] = []
+        self._workspace_ready = False
         self.selected_images: list[Path] = []
         self.commercial_var = tk.BooleanVar(value=False)
         self.post_type_var = tk.StringVar(value="For Hire")
@@ -1261,6 +1280,8 @@ class PlannerApp(tk.Tk):
         self.refresh_profiles()
         self.refresh_creators()
         self.load_profile(0)
+        self._workspace_ready = True
+        self.after(10_000, self.autosave_workspace)
         self.after(60_000, self.refresh_clock)
 
     @property
@@ -1290,10 +1311,18 @@ class PlannerApp(tk.Tk):
         self.outer_frame.pack(fill="both", expand=True)
         self.outer_frame.columnconfigure(0, minsize=285)
         self.outer_frame.columnconfigure(1, weight=1)
-        self.outer_frame.rowconfigure(0, weight=1)
+        self.outer_frame.rowconfigure(1, weight=1)
+        toolbar = ttk.Frame(self.outer_frame, padding=6)
+        toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        ttk.Label(toolbar, text="Creator profile").pack(side="left", padx=(0, 8))
+        self.creator_combo = ttk.Combobox(toolbar, state="readonly", width=24)
+        self.creator_combo.pack(side="left")
+        self.creator_combo.bind("<<ComboboxSelected>>", self.on_creator_select)
+        for label, command in (("Add", self.add_creator), ("Edit", self.edit_creator), ("Remove profile", self.remove_creator), ("Export", self.export_creator), ("Import creator template", self.import_creator)):
+            ttk.Button(toolbar, text=label, command=command).pack(side="left", padx=3)
 
         left = ttk.Frame(self.outer_frame, padding=8)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        left.grid(row=1, column=0, sticky="nsew", padx=(0, 14))
         ttk.Label(left, text="Communities", font=self.ui_font(13, "bold")).pack(anchor="w")
         ttk.Label(left, text="Each community has its own folder, drafts and rule checks.", wraplength=245).pack(anchor="w", pady=(2, 10))
         search_row = ttk.Frame(left)
@@ -1326,21 +1355,9 @@ class PlannerApp(tk.Tk):
         ttk.Button(left, text="Export community template", command=self.export_profile).pack(fill="x", pady=(14, 4))
         ttk.Button(left, text="Import community template", command=self.import_profile).pack(fill="x")
         ttk.Button(left, text="Copy settings to…", command=self.copy_community_settings).pack(fill="x", pady=(4, 0))
-        ttk.Separator(left).pack(fill="x", pady=14)
-        ttk.Label(left, text="Creator profile", font=self.ui_font(11, "bold")).pack(anchor="w")
-        self.creator_combo = ttk.Combobox(left, state="readonly")
-        self.creator_combo.pack(fill="x", pady=(4, 5))
-        self.creator_combo.bind("<<ComboboxSelected>>", self.on_creator_select)
-        creator_buttons = ttk.Frame(left)
-        creator_buttons.pack(fill="x")
-        ttk.Button(creator_buttons, text="Add", command=self.add_creator).pack(side="left")
-        ttk.Button(creator_buttons, text="Edit", command=self.edit_creator).pack(side="left", padx=5)
-        ttk.Button(creator_buttons, text="Remove profile", command=self.remove_creator).pack(side="left")
-        ttk.Button(creator_buttons, text="Export", command=self.export_creator).pack(side="left")
-        ttk.Button(left, text="Import creator template", command=self.import_creator).pack(fill="x", pady=(5, 0))
 
         right = ttk.Frame(self.outer_frame, padding=8)
-        right.grid(row=0, column=1, sticky="nsew")
+        right.grid(row=1, column=1, sticky="nsew")
         header = ttk.Frame(right)
         header.pack(fill="x")
         self.community_heading = ttk.Label(header, text="", font=self.ui_font(18, "bold"))
@@ -1361,6 +1378,9 @@ class PlannerApp(tk.Tk):
         category_bar.pack(fill="x", pady=(0, 6))
         options_row = ttk.Frame(category_bar)
         options_row.pack(fill="x")
+        self.advanced_options = options_row
+        self.advanced_visible = tk.BooleanVar(value=True)
+        ttk.Checkbutton(category_bar, text="Customize draft", variable=self.advanced_visible, command=self.toggle_advanced).pack(before=options_row, anchor="w", pady=(0, 5))
         actions_row = ttk.Frame(category_bar)
         actions_row.pack(fill="x", pady=(7, 0))
         ttk.Label(options_row, text="Content type").pack(side="left")
@@ -1482,7 +1502,7 @@ class PlannerApp(tk.Tk):
             pane = self.workspace_panes.get(name)
             if pane is None or not isinstance(values, list):
                 continue
-            size = pane.winfo_width() if pane.cget("orient") == "horizontal" else pane.winfo_height()
+            size = pane.winfo_width() if str(pane.cget("orient")) == "horizontal" else pane.winfo_height()
             for index, fraction in enumerate(values[:len(pane.panes()) - 1]):
                 if isinstance(fraction, (int, float)):
                     pane.sashpos(index, int(size * min(.9, max(.1, fraction))))
@@ -1491,6 +1511,30 @@ class PlannerApp(tk.Tk):
         self.data["layout"] = {"vertical": [.68], "editor": [.62], "notes": [.6]}
         self.restore_layout()
         self.save_data()
+
+    def toggle_advanced(self) -> None:
+        if self.advanced_visible.get():
+            self.advanced_options.pack(fill="x", after=self.advanced_options.master.winfo_children()[1])
+        else:
+            self.advanced_options.pack_forget()
+
+    def remember_draft(self) -> None:
+        if self._workspace_ready:
+            store_draft(self.data, self.profile["name"], self.creator["name"], self.title_entry.get(), self.body_text.get("1.0", "end").strip(), self.selected_images)
+
+    def restore_draft(self) -> None:
+        draft = get_draft(self.data, self.profile["name"], self.creator["name"])
+        self.title_entry.delete(0, "end")
+        self.title_entry.insert(0, draft.get("title", ""))
+        self.body_text.delete("1.0", "end")
+        self.body_text.insert("1.0", draft.get("body", ""))
+        self.selected_images = [Path(path) for path in draft.get("images", []) if Path(path).is_file()][:self.image_limit()]
+        self.refresh_image_grid()
+
+    def autosave_workspace(self) -> None:
+        self.remember_draft()
+        self.save_data()
+        self.after(10_000, self.autosave_workspace)
 
     def capture_ui_texts(self) -> None:
         """Store the original UI labels so the language selector is reversible."""
@@ -1678,12 +1722,13 @@ class PlannerApp(tk.Tk):
     def save_data(self) -> None:
         try:
             if hasattr(self, "workspace_panes"):
-                self.data["layout"] = {name: [pane.sashpos(i) / max(1, pane.winfo_width() if pane.cget("orient") == "horizontal" else pane.winfo_height()) for i in range(len(pane.panes()) - 1)] for name, pane in self.workspace_panes.items()}
+                self.data["layout"] = {name: [pane.sashpos(i) / max(1, pane.winfo_width() if str(pane.cget("orient")) == "horizontal" else pane.winfo_height()) for i in range(len(pane.panes()) - 1)] for name, pane in self.workspace_panes.items()}
             write_database(DATA_PATH, self.data)
         except OSError as error:
             messagebox.showerror("Could not save", f"The planner could not save its local data:\n{error}")
 
     def close(self) -> None:
+        self.remember_draft()
         self.save_data()
         self.destroy()
 
@@ -1750,7 +1795,9 @@ class PlannerApp(tk.Tk):
     def on_creator_select(self, _event: Any) -> None:
         selected = self.creator_combo.current()
         if selected >= 0:
+            self.remember_draft()
             self.creator_index = selected
+            self.restore_draft()
             self.validate()
 
     def on_profile_select(self, _event: Any) -> None:
@@ -1761,6 +1808,7 @@ class PlannerApp(tk.Tk):
     def load_profile(self, index: int) -> None:
         if not self.data["profiles"]:
             return
+        self.remember_draft()
         self.current_index = index
         profile = self.profile
         if not profile.get("rules", {}).get("promotion_allowed", True):
@@ -1771,14 +1819,15 @@ class PlannerApp(tk.Tk):
         folder_label = "Pasta de imagens" if self.ui_language == "pt" else "Image folder"
         not_configured = "Não configurada" if self.ui_language == "pt" else "Not configured"
         self.folder_label.config(text=f"{folder_label}: {folder or not_configured}")
-        self.notes_label.config(text=profile["rules"].get("notes", "No notes added."))
+        rules = profile["rules"]
+        self.notes_label.config(text=rules.get("notes", "No notes added.") + "\n\n" + rules.get("source_url", "") + "\n" + rules.get("last_reviewed", "") + " · " + rules.get("verification_status", "unverified"))
         self.configure_title_tag_control()
         self.configure_price_control()
         self.selected_images = []
         self.title_entry.delete(0, "end")
         self.body_text.delete("1.0", "end")
         self.load_images()
-        self.refresh_image_grid()
+        self.restore_draft()
         self.update_status()
         self.update_repost_controls()
         self.validate()
@@ -2022,6 +2071,14 @@ class PlannerApp(tk.Tk):
             )
         else:
             self.repost_notice_var.set("No local posting protection is active for this community.")
+        last = self.last_posted_at(self.profile)
+        if self.ui_language == "pt":
+            text = f"Última publicação: {last.strftime('%d/%m %H:%M')}" if last else "Nenhuma publicação registrada"
+            text += f" · Liberado em {until.strftime('%d/%m %H:%M')}" if until else " · Intervalo liberado"
+        else:
+            text = f"Last published: {last.strftime('%d/%m %H:%M')}" if last else "No publication recorded"
+            text += f" · Available {until.strftime('%d/%m %H:%M')}" if until else " · Posting interval clear"
+        self.repost_notice_var.set(text)
 
     def availability_rank(self, profile: dict[str, Any]) -> int:
         if self.repost_lock_until(profile) is not None:
@@ -2110,6 +2167,8 @@ class PlannerApp(tk.Tk):
             "{{reviews_link}}": creator.get("reviews_link", ""),
         }
         for token, replacement in mapping.items():
+            if token == "{{handle}}" and self.profile.get("rules", {}).get("no_title_contact"):
+                replacement = ""
             text = text.replace(token, replacement)
             # Older generated options used one pair of braces because they
             # passed through an f-string. Support them as well, so saved
@@ -2159,6 +2218,9 @@ class PlannerApp(tk.Tk):
         return list(ART_SHOWCASE_TITLES), list(ART_SHOWCASE_BODIES)
 
     def prepare_draft(self) -> None:
+        if self.profile.get("rules", {}).get("manual_description"):
+            messagebox.showinfo("Write your own description", "This community requires a genuine description of your artwork. Write it yourself in the draft body. RebRed will check its length and tags.", parent=self)
+            return
         current = (self.title_entry.get(), self.body_text.get("1.0", "end").strip())
         if any(current) and current != getattr(self, "_generated_draft", None):
             if not messagebox.askyesno("Replace draft", "Replace the current edited draft?", parent=self):
@@ -2169,7 +2231,7 @@ class PlannerApp(tk.Tk):
         if visible_creator >= 0:
             self.creator_index = visible_creator
         profile = self.profile
-        showcase_mode = not profile.get("rules", {}).get("promotion_allowed", True)
+        showcase_mode = self.post_type_var.get() == "Artwork / OC" or not profile.get("rules", {}).get("promotion_allowed", True)
         if showcase_mode:
             self.post_type_var.set("Artwork / OC")
             self.include_price_var.set(False)
@@ -2179,10 +2241,10 @@ class PlannerApp(tk.Tk):
             body_choices = generated_bodies
         else:
             generated_titles, generated_bodies = self.category_options()
-            title_choices = profile["titles"] + generated_titles
+            title_choices = profile.get("titles", []) + generated_titles
             # Communities with tailored templates use only those templates.
             # Other communities retain the editable category variations.
-            body_choices = profile["bodies"] if profile["name"].lower() in COMMUNITY_BODY_TEMPLATES else profile["bodies"] + generated_bodies
+            body_choices = profile.get("bodies", []) if profile["name"].lower() in COMMUNITY_BODY_TEMPLATES and profile.get("bodies") else profile.get("bodies", []) + generated_bodies
         self.title_entry.delete(0, "end")
         self.title_entry.insert(0, self.apply_title_tag(self.render_template(random.choice(title_choices))))
         self.body_text.delete("1.0", "end")
@@ -2195,7 +2257,10 @@ class PlannerApp(tk.Tk):
                 price_block = f"Starting price: ${price:g} USD" if price else "Please add your starting price or budget."
         body = random.choice(body_choices)
         body = body.replace("{{price_block}}", price_block).replace("{price_block}", price_block)
-        self.body_text.insert("1.0", self.render_template(body))
+        rendered = self.render_template(body)
+        for url in blocked_urls(rendered, profile.get("rules", {}).get("banned_domains", [])):
+            rendered = rendered.replace(url, "")
+        self.body_text.insert("1.0", rendered)
         self._generated_draft = (self.title_entry.get(), self.body_text.get("1.0", "end").strip())
         paths = self.image_paths()
         if paths:
@@ -2287,6 +2352,15 @@ class PlannerApp(tk.Tk):
         lowered_title = title.lower()
         lowered_body = body.lower()
         checks: list[tuple[str, str]] = []
+        minimum_body = rules.get("min_body_chars", 0)
+        if minimum_body and len(body) < minimum_body:
+            checks.append(("error", f"Body needs at least {minimum_body} characters describing your artwork."))
+        if rules.get("no_title_contact") and re.search(r"https?://|@|discord", title, re.IGNORECASE):
+            checks.append(("error", "Do not put contact details or links in this title."))
+        if rules.get("offer_days") and self.post_type_var.get() == "For Hire" and DAYS[self.now_for(profile).weekday()] not in rules["offer_days"]:
+            checks.append(("error", "Paid offers are only allowed on weekends in this community."))
+        if profile["name"].lower() == "dnd" and self.selected_images:
+            checks.append(("warning", "DnD Thursdays are text-only using Eastern US timing. Confirm image posting is open."))
         tokens = unresolved_tokens(title + "\n" + body)
         if tokens:
             checks.append(("error", "Fill template fields: " + ", ".join(tokens)))
@@ -2374,7 +2448,7 @@ class PlannerApp(tk.Tk):
         for level, text in checks:
             prefix = {"ok": "✓", "error": "✕", "warning": "!"}[level]
             tag = {"ok": "good", "error": "bad", "warning": "warn"}[level]
-            self.validation_text.insert("end", f"{prefix} {text}\n", tag)
+            self.validation_text.insert("end", f"{prefix} {translate_check(text, self.ui_language)}\n", tag)
         self.validation_text.tag_configure("good", foreground="#167a31")
         self.validation_text.tag_configure("bad", foreground="#b42318")
         self.validation_text.tag_configure("warn", foreground="#9a6700")

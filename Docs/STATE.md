@@ -2,11 +2,11 @@
 
 Last verified: 2026-11-03
 
-Current source version: `1.3-beta`
+Current source version: `1.4-beta`
 
-Latest Windows delivery: `App/outputs/RebRed-1.3-beta.exe`
+Latest Windows delivery: `App/outputs/RebRed-1.4-beta.exe`
 
-1.3 implementation status: see `PROGRESS-1.3.md`. This is an incremental delivery, not completion of the full requested redesign. 18 tests passed, including Tk appearance and storage recovery. Community-rule source research and the remaining layout work are pending.
+Current implementation status: see `PROGRESS-1.4.md`. 24 tests passed, including Tk draft switching and controls, storage recovery, and rule migrations. Seven communities have source-backed partial reviews. Further community research and layout work remain pending. The old release workflow is version-pinned to 1.2; do not use it to publish this build.
 
 Linux AppImages and Windows release executables are built and attached to GitHub Releases by `.github/workflows/release.yml` when a `v*` tag is pushed.
 
